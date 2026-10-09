@@ -56,29 +56,31 @@ const (
 
 // 支付提供方常量
 const (
-	PaymentProviderOfficial  = "official"
-	PaymentProviderEpay      = "epay"
-	PaymentProviderEpusdt    = "epusdt"
-	PaymentProviderBepusdt   = "bepusdt"
-	PaymentProviderDujiaoPay = "dujiaopay"
-	PaymentProviderOkpay     = "okpay"
-	PaymentProviderTokenpay  = "tokenpay"
-	PaymentProviderWallet    = "wallet"
+	PaymentProviderOfficial     = "official"
+	PaymentProviderEpay         = "epay"
+	PaymentProviderEpusdt       = "epusdt"
+	PaymentProviderBepusdt      = "bepusdt"
+	PaymentProviderDujiaoPay    = "dujiaopay"
+	PaymentProviderOkpay        = "okpay"
+	PaymentProviderTokenpay     = "tokenpay"
+	PaymentProviderRerouteMoney = "reroute_money"
+	PaymentProviderWallet       = "wallet"
 )
 
 // 支付渠道类型常量
 const (
-	PaymentChannelTypeWechat    = "wechat"
-	PaymentChannelTypeWxpay     = "wxpay"
-	PaymentChannelTypeAlipay    = "alipay"
-	PaymentChannelTypePaypal    = "paypal"
-	PaymentChannelTypeStripe    = "stripe"
-	PaymentChannelTypeQqpay     = "qqpay"
-	PaymentChannelTypeUsdt      = "usdt"
-	PaymentChannelTypeUsdtTrc20 = "usdt-trc20"
-	PaymentChannelTypeUsdcTrc20 = "usdc-trc20"
-	PaymentChannelTypeTrx       = "trx"
-	PaymentChannelTypeBalance   = "balance"
+	PaymentChannelTypeWechat       = "wechat"
+	PaymentChannelTypeWxpay        = "wxpay"
+	PaymentChannelTypeAlipay       = "alipay"
+	PaymentChannelTypePaypal       = "paypal"
+	PaymentChannelTypeStripe       = "stripe"
+	PaymentChannelTypeQqpay        = "qqpay"
+	PaymentChannelTypeUsdt         = "usdt"
+	PaymentChannelTypeUsdtTrc20    = "usdt-trc20"
+	PaymentChannelTypeUsdcTrc20    = "usdc-trc20"
+	PaymentChannelTypeTrx          = "trx"
+	PaymentChannelTypeBalance      = "balance"
+	PaymentChannelTypeRerouteMoney = "reroute-money"
 )
 
 // 支付渠道付款角色常量
@@ -514,11 +516,12 @@ const (
 	SettingFieldUpstreamCallback = "upstream_callback"
 
 	// 默认回调路由路径
-	DefaultPaymentCallbackPath  = "/api/v1/payments/callback"
-	DefaultDujiaoPayWebhookPath = "/api/v1/payments/webhook/dujiaopay"
-	DefaultPaypalWebhookPath    = "/api/v1/payments/webhook/paypal"
-	DefaultStripeWebhookPath    = "/api/v1/payments/webhook/stripe"
-	DefaultUpstreamCallbackPath = "/api/v1/upstream/callback"
+	DefaultPaymentCallbackPath     = "/api/v1/payments/callback"
+	DefaultDujiaoPayWebhookPath    = "/api/v1/payments/webhook/dujiaopay"
+	DefaultPaypalWebhookPath       = "/api/v1/payments/webhook/paypal"
+	DefaultStripeWebhookPath       = "/api/v1/payments/webhook/stripe"
+	DefaultRerouteMoneyWebhookPath = "/api/v1/payments/webhook/reroute-money"
+	DefaultUpstreamCallbackPath    = "/api/v1/upstream/callback"
 )
 
 // 币种常量

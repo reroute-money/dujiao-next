@@ -45,7 +45,9 @@ func (s *PaymentService) CapturePayment(input CapturePaymentInput) (*paymentdoma
 	}
 
 	providerType := strings.ToLower(strings.TrimSpace(channel.ProviderType))
-	if providerType != constants.PaymentProviderOfficial {
+	// reroute-money 到账只靠平台异步推送，推送投递失败时需要前台轮询主动查单兜底，
+	// 所以放行这个 provider；能否真正查询由下面 adapter 是否实现 GatewayCapturer 决定。
+	if providerType != constants.PaymentProviderOfficial && providerType != constants.PaymentProviderRerouteMoney {
 		return nil, ErrPaymentProviderNotSupported
 	}
 	if strings.TrimSpace(payment.ProviderRef) == "" {

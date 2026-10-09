@@ -167,6 +167,16 @@ func (a webhookServiceAdapter) HandleDujiaoPayWebhook(input paymenttransport.Web
 	return payment, eventType, mapTransportError(err)
 }
 
+func (a webhookServiceAdapter) HandleRerouteMoneyWebhook(input paymenttransport.WebhookCallbackInput) (*paymentdomain.Payment, string, error) {
+	payment, status, err := a.payments.HandleRerouteMoneyWebhook(paymentapp.WebhookCallbackInput{
+		ChannelID: input.ChannelID,
+		Headers:   input.Headers,
+		Body:      input.Body,
+		Context:   input.Context,
+	})
+	return payment, status, mapTransportError(err)
+}
+
 type exceptionAlerterAdapter struct {
 	notifications notificationcontract.NotificationEnqueuer
 }

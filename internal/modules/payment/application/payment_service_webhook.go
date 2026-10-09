@@ -161,6 +161,18 @@ func (s *PaymentService) HandleDujiaoPayWebhook(input WebhookCallbackInput) (*pa
 	return s.commitVerifiedWebhook(channel, result, log)
 }
 
+// HandleRerouteMoneyWebhook 处理 Reroute Money 订单推送。
+//
+// 平台只签 notify_url 的 pathname，报文里不带渠道标识，因此 channel_id 缺失时可以
+// 靠验签本身辨认渠道（见 supportsBlindWebhookCandidateMatching）。
+func (s *PaymentService) HandleRerouteMoneyWebhook(input WebhookCallbackInput) (*paymentdomain.Payment, string, error) {
+	return s.handleWebhookViaRegistry(
+		input,
+		constants.PaymentProviderRerouteMoney,
+		constants.PaymentChannelTypeRerouteMoney,
+	)
+}
+
 // handleWebhookViaRegistry 通过 Registry 路由 webhook 解析。
 //
 // channel_id 在 URL query 缺失时:
@@ -394,10 +406,11 @@ func (s *PaymentService) commitVerifiedWebhook(
 //
 // 微信(api_v3_key + AES-GCM auth tag)和 stripe(endpoint_secret + HMAC)
 // 都满足:错配的密钥会在解密/验签阶段失败,正确的密钥才能成功;
+// reroute-money 用 platform_public_key 验 RSA 签名,同属这一类;
 // paypal 的 webhook 验签依赖 webhook_id 字段语义,无法盲匹配。
 func supportsBlindWebhookCandidateMatching(channelType string) bool {
 	switch strings.ToLower(strings.TrimSpace(channelType)) {
-	case constants.PaymentChannelTypeWechat, constants.PaymentChannelTypeStripe:
+	case constants.PaymentChannelTypeWechat, constants.PaymentChannelTypeStripe, constants.PaymentChannelTypeRerouteMoney:
 		return true
 	default:
 		return false

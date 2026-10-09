@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"html/template"
 	"io"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	ginutil "github.com/dujiao-next/internal/platform/http/ginutil"
 
 	"github.com/dujiao-next/internal/constants"
+	"github.com/dujiao-next/internal/i18n"
 	"github.com/dujiao-next/internal/platform/http/response"
 	"github.com/dujiao-next/internal/shared/jsonmap"
 
@@ -40,6 +42,7 @@ type PaymentWebhookService interface {
 	HandlePaypalWebhook(input WebhookCallbackInput) (*paymentdomain.Payment, string, error)
 	HandleStripeWebhook(input WebhookCallbackInput) (*paymentdomain.Payment, string, error)
 	HandleDujiaoPayWebhook(input WebhookCallbackInput) (*paymentdomain.Payment, string, error)
+	HandleRerouteMoneyWebhook(input WebhookCallbackInput) (*paymentdomain.Payment, string, error)
 }
 
 // ExceptionAlerter 支付异常告警入队端口。
@@ -59,6 +62,11 @@ type StripeWebhookQuery struct {
 
 // DujiaoPayWebhookQuery DujiaoPay webhook 查询参数。
 type DujiaoPayWebhookQuery struct {
+	ChannelID uint `form:"channel_id"`
+}
+
+// RerouteMoneyWebhookQuery reroute-money 推送查询参数 | channel_id 缺失时由验签辨认渠道。
+type RerouteMoneyWebhookQuery struct {
 	ChannelID uint `form:"channel_id"`
 }
 
@@ -208,6 +216,48 @@ func (h *WebhookHandler) DujiaoPayWebhook(c *gin.Context) {
 	respondWebhookSuccess(c, log, "dujiaopay_webhook", query.ChannelID, eventType, payment)
 }
 
+// RerouteMoneyWebhook 处理 Reroute Money 订单推送。
+func (h *WebhookHandler) RerouteMoneyWebhook(c *gin.Context) {
+	log := ginutil.RequestLog(c)
+	var query RerouteMoneyWebhookQuery
+	_ = c.ShouldBindQuery(&query)
+
+	body, err := readWebhookBody(c)
+	if err != nil {
+		log.Warnw("reroute_money_webhook_body_read_failed", "channel_id", query.ChannelID, "error", err)
+		respondRerouteMoneyWebhookFailure(c, http.StatusBadRequest, err)
+		return
+	}
+	log.Infow("reroute_money_webhook_received",
+		"channel_id", query.ChannelID,
+		"client_ip", c.ClientIP(),
+		"body_size", len(body),
+	)
+
+	payment, status, err := h.webhooks.HandleRerouteMoneyWebhook(WebhookCallbackInput{
+		ChannelID: query.ChannelID,
+		Headers:   collectRequestHeaders(c),
+		Body:      body,
+		Context:   c.Request.Context(),
+	})
+	if err != nil {
+		log.Warnw("reroute_money_webhook_handle_failed",
+			"channel_id", query.ChannelID,
+			"status", status,
+			"error", err,
+		)
+		h.enqueuePaymentExceptionAlert(c, jsonmap.JSON{
+			"alert_type":  "reroute_money_webhook_handle_failed",
+			"alert_level": "error",
+			"message":     strings.TrimSpace(err.Error()),
+			"provider":    constants.PaymentProviderRerouteMoney,
+		})
+		respondRerouteMoneyWebhookFailure(c, http.StatusServiceUnavailable, err)
+		return
+	}
+	respondWebhookSuccess(c, log, "reroute_money_webhook", query.ChannelID, status, payment)
+}
+
 func readWebhookBody(c *gin.Context) ([]byte, error) {
 	if c == nil || c.Request == nil || c.Request.Body == nil {
 		return nil, nil
@@ -279,6 +329,50 @@ func (h *WebhookHandler) enqueuePaymentExceptionAlert(c *gin.Context, data jsonm
 
 func respondPaymentCallbackError(c *gin.Context, err error) {
 	respondWithMappedError(c, err, paymentCallbackErrorRules, response.CodeInternal, "error.payment_callback_failed")
+}
+
+// rerouteMoneyWebhookPermanentErrors 是重投也救不回来的失败：伪造/错配的签名、金额币种对不上、
+// 渠道或配置不存在。其余错误（查单、落库）按 transientStatus 回非 2xx，让平台继续重投。
+var rerouteMoneyWebhookPermanentErrors = []error{
+	ErrPaymentInvalid,
+	ErrPaymentStatusInvalid,
+	ErrPaymentAmountMismatch,
+	ErrPaymentCurrencyMismatch,
+	ErrPaymentChannelConfigInvalid,
+	ErrPaymentChannelNotFound,
+	ErrPaymentGatewayRequestFailed,
+	ErrPaymentGatewayResponseInvalid,
+	ErrPaymentProviderNotSupported,
+}
+
+// respondRerouteMoneyWebhookFailure 用真实 HTTP 状态码应答 reroute-money 推送失败。
+//
+// 平台只按 HTTP 状态判定投递结果并据此重投，而 dujiao 的业务错误响应恒为 200，
+// 直接把失败交给 response.Error 会让平台以为投递成功，支付永久停在待支付。
+func respondRerouteMoneyWebhookFailure(c *gin.Context, transientStatus int, err error) {
+	httpStatus := transientStatus
+	for _, permanent := range rerouteMoneyWebhookPermanentErrors {
+		if errors.Is(err, permanent) {
+			httpStatus = http.StatusBadRequest
+			break
+		}
+	}
+	// 业务码跟着 HTTP 状态走，避免出现 400 配 500 这种自相矛盾的响应
+	code := response.CodeInternal
+	if httpStatus == http.StatusBadRequest {
+		code = response.CodeBadRequest
+	}
+	ginutil.RequestLog(c).Errorw("reroute_money_webhook_failed",
+		"http_status", httpStatus,
+		"code", code,
+		"error", err,
+	)
+	response.ErrorWithHTTPStatus(
+		c,
+		httpStatus,
+		code,
+		i18n.T(i18n.ResolveLocale(c), "error.payment_callback_failed"),
+	)
 }
 
 var paymentCallbackErrorRules = concatMappedErrors(

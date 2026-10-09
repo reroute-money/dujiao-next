@@ -31,6 +31,7 @@ var sensitivePaymentConfigKeys = map[string]struct{}{
 	"notify_secret":        {},
 	"private_key":          {},
 	"secret_key":           {},
+	"service_private_key":  {},
 	"webhook_secret":       {},
 }
 

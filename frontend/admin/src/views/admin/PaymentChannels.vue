@@ -120,6 +120,7 @@ const providerTypeLabel = (value?: string) => {
     okpay: t('admin.paymentChannels.providerTypes.okpay'),
     dujiaopay: t('admin.paymentChannels.providerTypes.dujiaopay'),
     tokenpay: t('admin.paymentChannels.providerTypes.tokenpay'),
+    reroute_money: t('admin.paymentChannels.providerTypes.rerouteMoney'),
   }
   return map[value || ''] || value || '-'
 }
@@ -135,6 +136,7 @@ const channelTypeLabel = (value?: string) => {
     'usdt-trc20': t('admin.paymentChannels.channelTypes.usdtTrc20'),
     'usdc-trc20': t('admin.paymentChannels.channelTypes.usdcTrc20'),
     trx: t('admin.paymentChannels.channelTypes.trx'),
+    'reroute-money': t('admin.paymentChannels.channelTypes.rerouteMoney'),
     bepusdt: t('admin.paymentChannels.channelTypes.bepusdtCashier'),
     epusdt: t('admin.paymentChannels.channelTypes.epusdt'),
     'tron-usdt': t('admin.paymentChannels.channelTypes.tronUsdt'),
@@ -340,6 +342,7 @@ watch(
               <SelectItem value="epusdt">{{ t('admin.paymentChannels.providerTypes.epusdt') }}</SelectItem>
               <SelectItem value="okpay">{{ t('admin.paymentChannels.providerTypes.okpay') }}</SelectItem>
               <SelectItem value="tokenpay">{{ t('admin.paymentChannels.providerTypes.tokenpay') }}</SelectItem>
+              <SelectItem value="reroute_money">{{ t('admin.paymentChannels.providerTypes.rerouteMoney') }}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -359,6 +362,7 @@ watch(
               <SelectItem value="usdt-trc20">{{ t('admin.paymentChannels.channelTypes.usdtTrc20') }}</SelectItem>
               <SelectItem value="usdc-trc20">{{ t('admin.paymentChannels.channelTypes.usdcTrc20') }}</SelectItem>
               <SelectItem value="trx">{{ t('admin.paymentChannels.channelTypes.trx') }}</SelectItem>
+              <SelectItem value="reroute-money">{{ t('admin.paymentChannels.channelTypes.rerouteMoney') }}</SelectItem>
               <SelectItem value="tron-usdt">{{ t('admin.paymentChannels.channelTypes.tronUsdt') }}</SelectItem>
               <SelectItem value="tron-trx">{{ t('admin.paymentChannels.channelTypes.tronTrx') }}</SelectItem>
               <SelectItem value="ethereum-usdt">{{ t('admin.paymentChannels.channelTypes.ethereumUsdt') }}</SelectItem>

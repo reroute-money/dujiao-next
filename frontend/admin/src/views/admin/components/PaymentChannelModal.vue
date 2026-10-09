@@ -189,6 +189,25 @@ const dujiaopayConfig = reactive({
   cancel_url: '',
 })
 
+// reroute 的推送验签取 notify_url 的 pathname 参与签名串，路径写错等于每个推送都验不过，
+// 所以新建与重置都预填平台侧登记好的回调路径。
+const rerouteDefaultNotifyURL = 'https://api.yourdomain.com/api/v1/payments/webhook/reroute-money'
+
+// reroute 只提供线上收款，channel_type 由后端固定校验，不让管理员填写。
+const rerouteChannelType = 'reroute-money'
+
+const rerouteConfig = reactive({
+  base_url: 'https://access-point.reroute.money',
+  using_key: '',
+  act_as: '',
+  service_private_key: '',
+  platform_public_key: '',
+  product_type: 'ONLINE_RECEIVE',
+  receipt_currency: '',
+  notify_url: rerouteDefaultNotifyURL,
+  return_url: '',
+})
+
 const epayChannelOptions = [
   { value: 'wechat', label: 'admin.paymentChannels.channelTypes.wechat' },
   { value: 'alipay', label: 'admin.paymentChannels.channelTypes.alipay' },
@@ -286,6 +305,12 @@ const interactionModeOptions = computed(() => {
     ]
   }
   if (form.provider_type === 'okpay') {
+    return [
+      { value: 'qr', label: 'admin.paymentChannels.interactionModes.qr' },
+      { value: 'redirect', label: 'admin.paymentChannels.interactionModes.redirect' },
+    ]
+  }
+  if (form.provider_type === 'reroute_money') {
     return [
       { value: 'qr', label: 'admin.paymentChannels.interactionModes.qr' },
       { value: 'redirect', label: 'admin.paymentChannels.interactionModes.redirect' },
@@ -461,6 +486,18 @@ const resetDujiaoPayConfig = () => {
   dujiaopayConfig.cancel_url = 'https://yourdomain.com/pay'
 }
 
+const resetRerouteConfig = () => {
+  rerouteConfig.base_url = 'https://access-point.reroute.money'
+  rerouteConfig.using_key = ''
+  rerouteConfig.act_as = ''
+  rerouteConfig.service_private_key = ''
+  rerouteConfig.platform_public_key = ''
+  rerouteConfig.product_type = 'ONLINE_RECEIVE'
+  rerouteConfig.receipt_currency = ''
+  rerouteConfig.notify_url = rerouteDefaultNotifyURL
+  rerouteConfig.return_url = ''
+}
+
 const resetAllConfigs = () => {
   resetEpayConfig()
   resetPaypalConfig()
@@ -472,6 +509,7 @@ const resetAllConfigs = () => {
   resetTokenpayConfig()
   resetOkpayConfig()
   resetDujiaoPayConfig()
+  resetRerouteConfig()
 }
 
 // --- Apply functions ---
@@ -606,6 +644,28 @@ const applyDujiaoPayConfig = (raw: Record<string, unknown>) => {
   dujiaopayConfig.fiat_currency = String(raw.fiat_currency || 'CNY').toUpperCase()
   dujiaopayConfig.success_url = String(raw.success_url || '')
   dujiaopayConfig.cancel_url = String(raw.cancel_url || '')
+}
+
+// reroute.money 的回调地址必须命中 /api/v1/payments/webhook/reroute-money，
+// 存量渠道没填或填错时回落到默认路径，避免保存后平台推送永远验签失败。
+const resolveRerouteNotifyURL = (value: unknown) => {
+  const raw = String(value || '').trim()
+  if (raw === '') {
+    return rerouteDefaultNotifyURL
+  }
+  return raw
+}
+
+const applyRerouteConfig = (raw: Record<string, unknown>) => {
+  rerouteConfig.base_url = String(raw.base_url || 'https://access-point.reroute.money')
+  rerouteConfig.using_key = String(raw.using_key || '')
+  rerouteConfig.act_as = String(raw.act_as || '')
+  rerouteConfig.service_private_key = String(raw.service_private_key || '')
+  rerouteConfig.platform_public_key = String(raw.platform_public_key || '')
+  rerouteConfig.product_type = String(raw.product_type || 'ONLINE_RECEIVE').toUpperCase()
+  rerouteConfig.receipt_currency = String(raw.receipt_currency || '').toUpperCase()
+  rerouteConfig.notify_url = resolveRerouteNotifyURL(raw.notify_url)
+  rerouteConfig.return_url = String(raw.return_url || '')
 }
 
 // --- Build functions ---
@@ -850,6 +910,28 @@ const buildDujiaoPayConfig = () => {
   return config
 }
 
+// reroute 的到账只靠平台异步推送，notify_url 必须始终写入并命中固定回调路径，
+// 否则后端 ValidateConfig 会直接拒绝保存。
+const buildRerouteConfig = () => {
+  const config: Record<string, unknown> = {}
+  const setIfNotEmpty = (key: string, value: string) => {
+    const trimmed = String(value || '').trim()
+    if (trimmed !== '') {
+      config[key] = trimmed
+    }
+  }
+  setIfNotEmpty('base_url', rerouteConfig.base_url)
+  setIfNotEmpty('using_key', rerouteConfig.using_key)
+  setIfNotEmpty('act_as', rerouteConfig.act_as)
+  setIfNotEmpty('service_private_key', rerouteConfig.service_private_key)
+  setIfNotEmpty('platform_public_key', rerouteConfig.platform_public_key)
+  setIfNotEmpty('receipt_currency', rerouteConfig.receipt_currency.toUpperCase())
+  setIfNotEmpty('notify_url', rerouteConfig.notify_url)
+  setIfNotEmpty('return_url', rerouteConfig.return_url)
+  config.product_type = String(rerouteConfig.product_type || 'ONLINE_RECEIVE').trim().toUpperCase() || 'ONLINE_RECEIVE'
+  return config
+}
+
 // token_id 由管理员手动输入，提交前统一规范化，避免大小写或空格写进 channel_type。
 const resolveDujiaopayChannelType = () =>
   dujiaopayConfig.order_mode === 'cashier'
@@ -892,6 +974,8 @@ watch(
       }
     } else if (value === 'tokenpay') {
       form.channel_type = 'usdt'
+    } else if (value === 'reroute_money') {
+      form.channel_type = rerouteChannelType
     }
     const allowedInteractionModes = interactionModeOptions.value.map((item) => item.value)
     if (!allowedInteractionModes.includes(form.interaction_mode)) {
@@ -1057,6 +1141,7 @@ watch(
           applyTokenpayConfig(channel.config_json)
           applyOkpayConfig(channel.config_json)
           applyDujiaoPayConfig(channel.config_json)
+          applyRerouteConfig(channel.config_json)
           if (channel.provider_type === 'okpay' && !String(form.channel_type || '').trim()) {
             form.channel_type = resolveOkpayChannelTypeFromConfig(channel.config_json)
           }
@@ -1193,6 +1278,13 @@ const handleSubmit = async () => {
       ...configJson,
       ...buildDujiaoPayConfig(),
     }
+  } else if (form.provider_type === 'reroute_money') {
+    // 平台不回传商户跳转地址，收款只依赖异步推送，return_url 一类字段不留残留
+    delete configJson.return_url
+    configJson = {
+      ...configJson,
+      ...buildRerouteConfig(),
+    }
   }
 
   // 专用表单构建器可能会重写同名字段；高级 JSON 中的显式 null
@@ -1214,6 +1306,8 @@ const handleSubmit = async () => {
             ? 'epusdt'
             : form.provider_type === 'dujiaopay'
               ? resolveDujiaopayChannelType()
+              : form.provider_type === 'reroute_money'
+                ? rerouteChannelType
           : form.channel_type,
     interaction_mode: form.interaction_mode,
     fee_rate: String(form.fee_rate || '0').trim(),
@@ -1280,10 +1374,11 @@ const closeModal = () => {
                 <SelectItem value="epusdt">{{ t('admin.paymentChannels.providerTypes.epusdt') }}</SelectItem>
                 <SelectItem value="okpay">{{ t('admin.paymentChannels.providerTypes.okpay') }}</SelectItem>
                 <SelectItem value="tokenpay">{{ t('admin.paymentChannels.providerTypes.tokenpay') }}</SelectItem>
+                <SelectItem value="reroute_money">{{ t('admin.paymentChannels.providerTypes.rerouteMoney') }}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div v-if="form.provider_type !== 'tokenpay' && form.provider_type !== 'bepusdt' && form.provider_type !== 'epusdt' && form.provider_type !== 'dujiaopay'" class="min-w-0">
+          <div v-if="form.provider_type !== 'tokenpay' && form.provider_type !== 'bepusdt' && form.provider_type !== 'epusdt' && form.provider_type !== 'dujiaopay' && form.provider_type !== 'reroute_money'" class="min-w-0">
             <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.channelType') }}</label>
             <Select v-model="form.channel_type">
               <SelectTrigger class="h-9 w-full">
@@ -1891,6 +1986,50 @@ const closeModal = () => {
             </div>
           </div>
           <div class="mt-3 text-xs text-muted-foreground">{{ t('admin.paymentChannels.modal.dujiaopayHint') }}</div>
+        </div>
+
+        <div v-if="form.provider_type === 'reroute_money'" class="min-w-0 rounded-xl border border-border bg-muted/20 p-4 overflow-hidden">
+          <div class="text-sm font-semibold text-foreground mb-3">{{ t('admin.paymentChannels.modal.rerouteSection') }}</div>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2 [&>*]:min-w-0">
+            <div class="min-w-0 md:col-span-2">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.rerouteBaseUrl') }}</label>
+              <Input v-model="rerouteConfig.base_url" :placeholder="t('admin.paymentChannels.modal.rerouteBaseUrlPlaceholder')" />
+            </div>
+            <div class="min-w-0">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.rerouteUsingKey') }}</label>
+              <Input v-model="rerouteConfig.using_key" :placeholder="t('admin.paymentChannels.modal.rerouteUsingKeyPlaceholder')" />
+            </div>
+            <div class="min-w-0">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.rerouteActAs') }}</label>
+              <Input v-model="rerouteConfig.act_as" :placeholder="t('admin.paymentChannels.modal.rerouteActAsPlaceholder')" />
+            </div>
+            <div class="min-w-0">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.rerouteProductType') }}</label>
+              <Input v-model="rerouteConfig.product_type" :placeholder="t('admin.paymentChannels.modal.rerouteProductTypePlaceholder')" />
+            </div>
+            <div class="min-w-0">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.rerouteReceiptCurrency') }}</label>
+              <Input v-model="rerouteConfig.receipt_currency" :placeholder="t('admin.paymentChannels.modal.rerouteReceiptCurrencyPlaceholder')" />
+            </div>
+            <div class="min-w-0 md:col-span-2">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.rerouteServicePrivateKey') }}</label>
+              <Textarea v-model="rerouteConfig.service_private_key" rows="4" class="font-mono text-xs" :placeholder="t('admin.paymentChannels.modal.rerouteServicePrivateKeyPlaceholder')" />
+            </div>
+            <div class="min-w-0 md:col-span-2">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.reroutePlatformPublicKey') }}</label>
+              <Textarea v-model="rerouteConfig.platform_public_key" rows="4" class="font-mono text-xs" :placeholder="t('admin.paymentChannels.modal.reroutePlatformPublicKeyPlaceholder')" />
+            </div>
+            <div class="min-w-0 md:col-span-2">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.rerouteNotifyUrl') }}</label>
+              <Input v-model="rerouteConfig.notify_url" :placeholder="t('admin.paymentChannels.modal.rerouteNotifyUrlPlaceholder')" />
+            </div>
+            <div class="min-w-0 md:col-span-2">
+              <label class="block text-xs font-medium text-muted-foreground mb-1.5">{{ t('admin.paymentChannels.modal.rerouteReturnUrl') }}</label>
+              <Input v-model="rerouteConfig.return_url" :placeholder="t('admin.paymentChannels.modal.rerouteReturnUrlPlaceholder')" />
+              <div class="mt-1.5 text-xs text-muted-foreground">{{ t('admin.paymentChannels.modal.rerouteReturnUrlHint') }}</div>
+            </div>
+          </div>
+          <div class="mt-3 text-xs text-muted-foreground">{{ t('admin.paymentChannels.modal.rerouteHint') }}</div>
         </div>
 
         <div>

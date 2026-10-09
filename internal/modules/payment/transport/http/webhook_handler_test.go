@@ -3,7 +3,9 @@ package paymenthttp
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -98,6 +100,97 @@ func TestReadWebhookBodyRejectsOversizedPayload(t *testing.T) {
 
 	if _, err := readWebhookBody(c); err == nil {
 		t.Fatalf("oversized webhook body must be rejected")
+	}
+}
+
+func TestRerouteMoneyWebhookQueryBind(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/payments/webhook/reroute-money?channel_id=12", nil)
+
+	var query RerouteMoneyWebhookQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		t.Fatalf("bind reroute query failed: %v", err)
+	}
+	if query.ChannelID != 12 {
+		t.Fatalf("ChannelID = %d, want 12", query.ChannelID)
+	}
+}
+
+// reroute 推送的重投由平台按 HTTP 状态判定，而 dujiao 的业务错误响应恒为 200，
+// 所以失败必须回真实非 2xx：重投救不回来的回 400，其余回 503 让平台继续重投。
+func TestRespondRerouteMoneyWebhookFailureUsesRealHTTPStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name         string
+		err          error
+		transient    int
+		wantHTTP     int
+		wantBodyCode int
+	}{
+		{
+			// 验签失败在应用层被映射成 ErrPaymentGatewayResponseInvalid，
+			// 伪造与密钥错配的推送重投也救不回来，必须回 400 停止重投。
+			name:         "signature failure is permanent",
+			err:          fmt.Errorf("%w: reroute signature invalid", ErrPaymentGatewayResponseInvalid),
+			transient:    http.StatusServiceUnavailable,
+			wantHTTP:     http.StatusBadRequest,
+			wantBodyCode: response.CodeBadRequest,
+		},
+		{
+			name:         "amount mismatch is permanent",
+			err:          fmt.Errorf("%w: 20.50 != 20.00", ErrPaymentAmountMismatch),
+			transient:    http.StatusServiceUnavailable,
+			wantHTTP:     http.StatusBadRequest,
+			wantBodyCode: response.CodeBadRequest,
+		},
+		{
+			name:         "bad channel config is permanent",
+			err:          ErrPaymentChannelConfigInvalid,
+			transient:    http.StatusServiceUnavailable,
+			wantHTTP:     http.StatusBadRequest,
+			wantBodyCode: response.CodeBadRequest,
+		},
+		{
+			name:         "unknown failure stays retryable",
+			err:          errors.New("db is busy"),
+			transient:    http.StatusServiceUnavailable,
+			wantHTTP:     http.StatusServiceUnavailable,
+			wantBodyCode: response.CodeInternal,
+		},
+		{
+			// 读不到报文时由调用方指定状态码（入口传 400），不走 transient 回落
+			name:         "body read failure keeps the caller status",
+			err:          fmt.Errorf("read body: %w", io.ErrUnexpectedEOF),
+			transient:    http.StatusBadRequest,
+			wantHTTP:     http.StatusBadRequest,
+			wantBodyCode: response.CodeBadRequest,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/payments/webhook/reroute-money", nil)
+
+			respondRerouteMoneyWebhookFailure(c, tt.transient, tt.err)
+
+			if recorder.Code != tt.wantHTTP {
+				t.Fatalf("HTTP status = %d, want %d", recorder.Code, tt.wantHTTP)
+			}
+			var body response.Response
+			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if body.StatusCode != tt.wantBodyCode {
+				t.Fatalf("status_code = %d, want %d; body=%s", body.StatusCode, tt.wantBodyCode, recorder.Body.String())
+			}
+			if body.Msg == "" {
+				t.Fatalf("failure response must carry a localized message")
+			}
+		})
 	}
 }
 
