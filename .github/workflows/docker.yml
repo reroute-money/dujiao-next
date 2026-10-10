@@ -1,0 +1,153 @@
+name: docker
+
+# 镜像发布到 ghcr.io（GitHub Packages）。与 release.yml 的 goreleaser 互不影响：
+# goreleaser 出压缩包供一键升级，这里只出容器镜像。
+#
+# 触发口径：
+#   - v* tag        -> ghcr.io/<org>/dujiao-next:1.4.9 / v1.4.9 / 1.4 / 1 / latest（正式版才带 latest）
+#   - 默认分支 push -> :latest + :sha-<短哈希>
+#   - 其他分支 push -> :sha-<短哈希>，不占用 latest
+#   - pull_request  -> 只构建 linux/amd64 验证 Dockerfile，不登录也不推送
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - dev
+      # 本仓库（fork）的默认分支目前就是这条；改名时同步维护上面三行与 latest 的判定条件。
+      - feature/with-reroute.money
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/docker.yml'
+      - 'go.mod'
+      - 'go.sum'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'frontend/**'
+      - 'config.yml.example'
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: '构建后是否推送镜像到 ghcr.io'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  # 推送镜像与 buildx 层缓存都需要 packages 写权限
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  # github.repository 全小写，正好满足 ghcr 对镜像名的要求；
+  # 用 repository_owner 会带上账号原始大小写，构建时会被 ghcr 拒掉。
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  image:
+    name: Build and publish image
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve build scope
+        id: scope
+        env:
+          IS_PUSH: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true') }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+        run: |
+          # 事件数据一律走 env 读取，不写进脚本正文：
+          # workflow_dispatch 的布尔输入到这里是字符串，必须显式比 'true'，否则 'false' 会被当成真值。
+          platforms='linux/amd64,linux/arm64'
+          if [ "$IS_PR" = "true" ]; then
+            # PR 只是验证 Dockerfile 能否构建，跑 arm64 要整套 QEMU 模拟，不值当。
+            platforms='linux/amd64'
+          fi
+
+          # APP_VERSION 写进 internal/version.Version，后台升级面板会拿它跟 releases 比 semver，
+          # 因此必须是合法 semver：tag 事件直接用 tag 名（v1.4.9），其余分支构建成 v0.0.0-dev.<sha>。
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            app_version="$GITHUB_REF_NAME"
+          else
+            app_version="v0.0.0-dev.$(git rev-parse --short HEAD)"
+          fi
+
+          echo "push=$IS_PUSH" >> "$GITHUB_OUTPUT"
+          echo "platforms=$platforms" >> "$GITHUB_OUTPUT"
+          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
+          echo "push=$IS_PUSH platforms=$platforms app_version=$app_version"
+
+      # 多平台必须 QEMU：Go 交叉编译本身不需要它，但运行阶段的 alpine 要按目标架构拉取。
+      - name: Set up QEMU
+        if: steps.scope.outputs.platforms != 'linux/amd64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Packages
+        if: steps.scope.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            # 带 v 的一份：文档与 goreleaser 产物都用 v 前缀，避免有人 pull :v1.4.9 扑空
+            type=semver,pattern=v{{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            # latest 只给正式 tag 和默认分支，beta/rc 与特性分支不要把 latest 带走
+            type=raw,value=latest,enable=${{ (github.ref_type == 'tag' && !contains(github.ref_name, '-')) || github.ref_name == github.event.repository.default_branch }}
+          labels: |
+            org.opencontainers.image.title=dujiao-next
+            org.opencontainers.image.description=dujiao-next full-stack single binary image
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ steps.scope.outputs.platforms }}
+          push: ${{ steps.scope.outputs.push == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Dockerfile 用它写 internal/version.Version，后台升级面板据此判断版本
+          build-args: |
+            APP_VERSION=${{ steps.scope.outputs.app_version }}
+          # 层缓存放 ghcr 而不是 gha：多平台构建下 GHA 缓存容易顶到 10GB 上限，
+          # 且每个平台各存一份，命中率更低。PR 拿不到 packages 写权限，索性不带缓存。
+          cache-from: ${{ steps.scope.outputs.push == 'true' && format('type=registry,ref={0}:buildcache', env.IMAGE_NAME) || '' }}
+          cache-to: ${{ steps.scope.outputs.push == 'true' && format('type=registry,ref={0}:buildcache,mode=max', env.IMAGE_NAME) || '' }}
+
+      - name: Image summary
+        if: steps.scope.outputs.push == 'true'
+        env:
+          # 同样只经 env 传递：tags 里含 ref/sha 派生值，直接写进 run 正文会被 shell 解释
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          echo 'Pushed images:'
+          printf '%s\n' "$TAGS"
+          echo "digest=$DIGEST"
