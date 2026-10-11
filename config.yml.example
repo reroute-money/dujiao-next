@@ -76,6 +76,7 @@ redis:
   enabled: true
   host: 127.0.0.1
   port: 6379
+  username: ""  # Redis 6 ACL 用户名，未启用 ACL 时留空
   password: ""
   db: 0
   prefix: "dj"
@@ -84,6 +85,7 @@ queue:
   enabled: true
   host: 127.0.0.1
   port: 6379
+  username: ""  # Redis 6 ACL 用户名，未启用 ACL 时留空
   password: ""
   db: 1
   concurrency: 10

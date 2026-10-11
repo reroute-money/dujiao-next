@@ -240,6 +240,7 @@ func BuildServerConfig(cfg *config.QueueConfig) (asynq.RedisClientOpt, asynq.Con
 func buildRedisOpt(cfg *config.QueueConfig) asynq.RedisClientOpt {
 	host := "127.0.0.1"
 	port := 6379
+	username := ""
 	password := ""
 	db := 0
 	if cfg != nil {
@@ -249,11 +250,13 @@ func buildRedisOpt(cfg *config.QueueConfig) asynq.RedisClientOpt {
 		if cfg.Port > 0 {
 			port = cfg.Port
 		}
+		username = cfg.Username
 		password = cfg.Password
 		db = cfg.DB
 	}
 	return asynq.RedisClientOpt{
 		Addr:     fmt.Sprintf("%s:%d", host, port),
+		Username: username,
 		Password: password,
 		DB:       db,
 	}

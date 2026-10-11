@@ -44,6 +44,7 @@ func InitRedis(cfg *config.RedisConfig) error {
 
 	redisClient = redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", addr, port),
+		Username: cfg.Username,
 		Password: cfg.Password,
 		DB:       cfg.DB,
 	})

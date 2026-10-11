@@ -122,6 +122,7 @@ type RedisConfig struct {
 	Enabled  bool   `mapstructure:"enabled"`
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
+	Username string `mapstructure:"username"` // Redis 6 ACL 用户名，未启用 ACL 时留空
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
 	Prefix   string `mapstructure:"prefix"`
@@ -132,6 +133,7 @@ type QueueConfig struct {
 	Enabled              bool           `mapstructure:"enabled"`
 	Host                 string         `mapstructure:"host"`
 	Port                 int            `mapstructure:"port"`
+	Username             string         `mapstructure:"username"` // Redis 6 ACL 用户名，未启用 ACL 时留空
 	Password             string         `mapstructure:"password"`
 	DB                   int            `mapstructure:"db"`
 	Concurrency          int            `mapstructure:"concurrency"`
@@ -347,12 +349,14 @@ func Load() *Config {
 	viper.SetDefault("redis.enabled", true)
 	viper.SetDefault("redis.host", "127.0.0.1")
 	viper.SetDefault("redis.port", 6379)
+	viper.SetDefault("redis.username", "")
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
 	viper.SetDefault("redis.prefix", constants.RedisPrefixDefault)
 	viper.SetDefault("queue.enabled", true)
 	viper.SetDefault("queue.host", "127.0.0.1")
 	viper.SetDefault("queue.port", 6379)
+	viper.SetDefault("queue.username", "")
 	viper.SetDefault("queue.password", "")
 	viper.SetDefault("queue.db", 1)
 	viper.SetDefault("queue.concurrency", 10)

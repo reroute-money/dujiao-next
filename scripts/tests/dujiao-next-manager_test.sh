@@ -330,6 +330,8 @@ assert cfg["bootstrap"]["default_admin_password"] == 'Adm"in\\Pass123'
 assert cfg["email"]["password"] == 'smtp:pa#ss"word'
 assert cfg["email"]["use_ssl"] is True and cfg["email"]["use_tls"] is False
 assert cfg["web"]["admin_path"] == "/dj-safe"
+assert cfg["redis"]["username"] == "" and cfg["queue"]["username"] == ""
+assert cfg["redis"]["password"] == "redis-secret" and cfg["queue"]["password"] == "redis-secret"
 PY
   then
     pass "generates safe production YAML with special characters"
