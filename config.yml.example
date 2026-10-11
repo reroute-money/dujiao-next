@@ -26,7 +26,7 @@ log:
   compress: true
 
 database:
-  driver: sqlite  # sqlite / postgres / cockroach
+  driver: sqlite  # sqlite / postgres
   dsn: ./db/dujiao.db
   pool:
     max_open_conns: 1

@@ -12,7 +12,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
-	"gorm.io/gorm/schema"
 )
 
 var DB *gorm.DB
@@ -64,50 +63,8 @@ func newDialector(driver, dsn string) (gorm.Dialector, error) {
 		return sqlite.Open(appendSQLitePragmas(dsn)), nil
 	case "postgres", "postgresql":
 		return postgres.Open(dsn), nil
-	case "cockroach", "cockroachdb":
-		return cockroachDialector{Dialector: postgres.Open(dsn)}, nil
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
-	}
-}
-
-// cockroachDialector 让 CockroachDB 复用 postgres 驱动，只替换 Migrator。
-// Name() 仍返回 postgres，方言分支（gormutil 等）不受影响。
-type cockroachDialector struct {
-	gorm.Dialector
-}
-
-func (dialector cockroachDialector) Migrator(db *gorm.DB) gorm.Migrator {
-	return cockroachMigrator{Migrator: dialector.Dialector.Migrator(db)}
-}
-
-// cockroachMigrator 针对 CRDB 的类型/约束记账方式做两处适配：删唯一约束（见 MigrateColumnUnique）
-// 和 JSON 别名（见 GetTypeAliases），其余迁移行为沿用 postgres 驱动。
-// CRDB 把 unique index 也登记成表级约束，postgres 驱动据此对每个单列 uniqueIndex 发出
-// DROP CONSTRAINT uni_<table>_<column>，而 CRDB 里约束名是 <table>_<column>_key，
-// SQLSTATE 42704 会中断迁移。唯一性本就由索引保证，只保留创建分支。
-type cockroachMigrator struct {
-	gorm.Migrator
-}
-
-func (migrator cockroachMigrator) MigrateColumnUnique(dst interface{}, field *schema.Field, columnType gorm.ColumnType) error {
-	if !field.Unique {
-		return nil
-	}
-	return migrator.Migrator.MigrateColumnUnique(dst, field, columnType)
-}
-
-// GetTypeAliases 补上 CRDB 的 JSON 别名：CRDB 里 JSON 是 JSONB 的别名，列声明成 json 之后
-// introspection 一律回报 jsonb，而模型的标签是 type:json。postgres 驱动的别名表没有这一对，
-// AutoMigrate 每次比对都判定类型不符，对全部 JSON 列重发 ALTER COLUMN ... TYPE json USING ...::json，
-// 每列触发一次全表重写（线上实测 2~3s/列，且永远不会收敛）。JSONB 与 JSON 在 CRDB 是同一物理类型，
-// 这里把两个名字互认，让迁移比对收敛。
-func (migrator cockroachMigrator) GetTypeAliases(databaseTypeName string) []string {
-	switch strings.ToLower(databaseTypeName) {
-	case "json", "jsonb":
-		return []string{"json", "jsonb"}
-	default:
-		return migrator.Migrator.GetTypeAliases(databaseTypeName)
 	}
 }
 
