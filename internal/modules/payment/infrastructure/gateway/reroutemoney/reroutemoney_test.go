@@ -115,7 +115,7 @@ func TestValidateConfigRequiresEveryCredential(t *testing.T) {
 func TestValidateConfigRejectsUnregisteredReceiptCurrency(t *testing.T) {
 	privatePEM, publicPEM := newTestPEMKeys(t)
 	raw := validConfig(privatePEM, publicPEM)
-	raw["receipt_currency"] = "cny"
+	raw["receipt_currency"] = "aaa"
 	cfg, err := ParseConfig(raw)
 	if err != nil {
 		t.Fatalf("ParseConfig: %v", err)
@@ -223,6 +223,15 @@ func TestMinorUnitExponents(t *testing.T) {
 		{"20.50", "USD", 2050},
 		{"1.5", "USDT", 1500000},
 		{"0", "USDT", 0},
+		{"1", "CNY", 100},
+		// 无小数分位的币种按 10^0 交最小单位，落成 2 位会多收 100 倍
+		{"1300", "JPY", 1300},
+		{"2500", "KRW", 2500},
+		// 三位分位的第纳尔类，站点存的 1.23 就是 1230 fulus
+		{"1.23", "BHD", 1230},
+		{"0.5", "IQD", 500},
+		// 四位分位
+		{"1.23", "CLF", 12300},
 	}
 	for _, tt := range tests {
 		minor, err := ToMinorUnits(decimal.RequireFromString(tt.amount), tt.currency)
@@ -249,8 +258,12 @@ func TestToMinorUnitsRejectsAmountsItCannotRepresent(t *testing.T) {
 	if _, err := ToMinorUnits(decimal.RequireFromString("-1"), "USD"); !errors.Is(err, ErrConfigInvalid) {
 		t.Fatalf("negative err = %v, want ErrConfigInvalid", err)
 	}
-	if _, err := ToMinorUnits(decimal.RequireFromString("1"), "CNY"); !errors.Is(err, ErrConfigInvalid) {
+	if _, err := ToMinorUnits(decimal.RequireFromString("1"), "AAA"); !errors.Is(err, ErrConfigInvalid) {
 		t.Fatalf("unknown currency err = %v, want ErrConfigInvalid", err)
+	}
+	// 记帐货币（XAU/XDR 等）在 ISO 4217 里没有最小单位，不能换算
+	if _, err := ToMinorUnits(decimal.RequireFromString("1"), "XAU"); !errors.Is(err, ErrConfigInvalid) {
+		t.Fatalf("fund currency err = %v, want ErrConfigInvalid", err)
 	}
 	// USDT 的最小单位是 10^-6，比它更细的金额依然非法
 	if _, err := ToMinorUnits(decimal.RequireFromString("0.0000001"), "USDT"); !errors.Is(err, ErrConfigInvalid) {
@@ -260,7 +273,7 @@ func TestToMinorUnitsRejectsAmountsItCannotRepresent(t *testing.T) {
 
 func TestFromMinorUnitsRejectsUnknownCurrency(t *testing.T) {
 	// 平台回了没登记过的币种时不能猜它的单位精度，宁可让这笔回调失败
-	amount, err := FromMinorUnits(100, "CNY")
+	amount, err := FromMinorUnits(100, "AAA")
 	if !errors.Is(err, ErrResponseInvalid) {
 		t.Fatalf("err = %v, want ErrResponseInvalid", err)
 	}
@@ -270,12 +283,12 @@ func TestFromMinorUnitsRejectsUnknownCurrency(t *testing.T) {
 }
 
 func TestIsSupportedCurrency(t *testing.T) {
-	for _, currency := range []string{"INR", "usd", " USDT "} {
+	for _, currency := range []string{"INR", "usd", " USDT ", "CNY", "HKD", "JPY"} {
 		if !IsSupportedCurrency(currency) {
 			t.Fatalf("IsSupportedCurrency(%q) must be true", currency)
 		}
 	}
-	for _, currency := range []string{"", "CNY", "HKD"} {
+	for _, currency := range []string{"", "AAA", "XAU"} {
 		if IsSupportedCurrency(currency) {
 			t.Fatalf("IsSupportedCurrency(%q) must be false", currency)
 		}
@@ -396,7 +409,7 @@ func TestToSnapshotTranslatesMinorUnits(t *testing.T) {
 func TestToSnapshotRejectsUnregisteredCurrency(t *testing.T) {
 	value := int64(100)
 	if _, err := toSnapshot(&access.OrderResult{
-		PaymentAmount: &access.Money{Currency: access.Currency("CNY"), Value: value},
+		PaymentAmount: &access.Money{Currency: access.Currency("AAA"), Value: value},
 	}); !errors.Is(err, ErrResponseInvalid) {
 		t.Fatalf("err = %v, want ErrResponseInvalid", err)
 	}

@@ -152,7 +152,7 @@ func TestCreateCollectionOrderRejectsBadInput(t *testing.T) {
 		input CreateInput
 	}{
 		{"missing external identifier", CreateInput{PaymentCurrency: "USD", PaymentAmount: decimal.NewFromInt(1)}},
-		{"unsupported payment currency", CreateInput{ExternalIdentifier: "DJP1001", PaymentCurrency: "CNY", PaymentAmount: decimal.NewFromInt(1)}},
+		{"unregistered payment currency", CreateInput{ExternalIdentifier: "DJP1001", PaymentCurrency: "AAA", PaymentAmount: decimal.NewFromInt(1)}},
 		{"sub-minor amount", CreateInput{ExternalIdentifier: "DJP1001", PaymentCurrency: "USD", PaymentAmount: decimal.RequireFromString("1.005")}},
 		{"negative amount", CreateInput{ExternalIdentifier: "DJP1001", PaymentCurrency: "USD", PaymentAmount: decimal.NewFromInt(-1)}},
 	}

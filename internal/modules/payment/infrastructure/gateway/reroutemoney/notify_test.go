@@ -280,7 +280,7 @@ func TestParseNotifyRequiresPaymentAmountOnCollectionPush(t *testing.T) {
 				"externalIdentifier": "DJP1001",
 				"type":               string(access.OrderTypeCollection),
 				"status":             string(access.OrderStatusFailed),
-				"paymentAmount":      map[string]interface{}{"currency": "CNY", "value": 100},
+				"paymentAmount":      map[string]interface{}{"currency": "AAA", "value": 100},
 			},
 			accepted: ErrResponseInvalid,
 		},

@@ -166,7 +166,8 @@ func IsSupportedChannelType(channelType string) bool {
 	return strings.EqualFold(strings.TrimSpace(channelType), constants.PaymentChannelTypeRerouteMoney)
 }
 
-// IsSupportedCurrency 判定币种是否被平台接受。
+// IsSupportedCurrency 判定币种能否换算成最小单位 | 覆盖 ISO 4217 全部记数币种加链上 USDT，
+// 与站点币种设置（^[A-Z]{3}$）取同一套口径；记帐货币和自造码不在表内，一律显式失败。
 func IsSupportedCurrency(currency string) bool {
 	_, ok := minorUnitExponent(currency)
 	return ok
@@ -312,18 +313,6 @@ func ToPaymentStatus(status access.OrderStatus) string {
 		return constants.PaymentStatusPending
 	default:
 		return ""
-	}
-}
-
-// minorUnitExponent 币种最小单位指数 | INR/USD 的分是 10^-2，链上 USDT 是 10^-6。
-func minorUnitExponent(currency string) (int32, bool) {
-	switch strings.ToUpper(strings.TrimSpace(currency)) {
-	case string(access.CurrencyINR), string(access.CurrencyUSD):
-		return 2, true
-	case string(access.CurrencyUSDT):
-		return 6, true
-	default:
-		return 0, false
 	}
 }
 

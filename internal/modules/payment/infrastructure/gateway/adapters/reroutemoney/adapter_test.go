@@ -151,9 +151,9 @@ func TestRerouteMoneyAdapter_ValidateConfigRequiresCompleteCredentials(t *testin
 		}
 	}
 
-	// 平台只登记 INR/USD/USDT，配置其它收款币种会在下单时才失败，保存阶段就拦下
+	// 收款币种必须能换算成最小单位，表外的码在保存阶段就拦下，不留到下单那一刻
 	unsupported := validJSON(t, "https://access.example.com")
-	unsupported["receipt_currency"] = "CNY"
+	unsupported["receipt_currency"] = "AAA"
 	if err := a.ValidateConfig(unsupported, constants.PaymentChannelTypeRerouteMoney); !errors.Is(err, paymentcontract.ErrGatewayConfigInvalid) {
 		t.Fatalf("unsupported receipt_currency err = %v", err)
 	}
@@ -316,11 +316,11 @@ func TestRerouteMoneyAdapter_CreatePaymentRejectsUnsupportedChannelAndCurrency(t
 		t.Fatalf("err = %v, want ErrGatewayUnsupportedChannel", err)
 	}
 
-	// 站点币种必须是平台支持的三种之一，否则根本无法建单
+	// 站点币种必须能换算成最小单位，表外的码无法建单
 	if _, err := a.CreatePayment(context.Background(), cfgJSON, paymentcontract.GatewayCreateInput{
 		OrderNo:     "DJP1001",
 		Amount:      money.FromDecimal(decimal.NewFromInt(1)),
-		Currency:    "CNY",
+		Currency:    "AAA",
 		ChannelType: constants.PaymentChannelTypeRerouteMoney,
 	}); !errors.Is(err, paymentcontract.ErrGatewayConfigInvalid) {
 		t.Fatalf("err = %v, want ErrGatewayConfigInvalid", err)
