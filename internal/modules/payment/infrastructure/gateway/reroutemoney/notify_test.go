@@ -75,7 +75,7 @@ func notifyConfig(t *testing.T, publicPEM, notifyURL string) *Config {
 	return cfg
 }
 
-// notifyBody 平台推送报文 | 报文就是 Order 实体本身，不带 {code,data} 信封
+// notifyBody 平台推送报文 | 报文是业务单据那一行，订单信息包在 order 里，不带 {code,data} 信封
 func notifyBody(t *testing.T, payload map[string]interface{}) []byte {
 	t.Helper()
 	body, err := json.Marshal(payload)
@@ -85,9 +85,17 @@ func notifyBody(t *testing.T, payload map[string]interface{}) []byte {
 	return body
 }
 
+// collectionDocument 组一份代收单据 | 单据号摆顶层（查单接口认它），交易事实挂在 order
+func collectionDocument(documentID string, order map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"uniqueIdentifier": documentID,
+		"order":            order,
+	}
+}
+
 // succeededCollectionNotify 一笔标准的代收成功推送
 func succeededCollectionNotify(now time.Time) map[string]interface{} {
-	return map[string]interface{}{
+	return collectionDocument("col-1", map[string]interface{}{
 		"uniqueIdentifier":   "ord-1",
 		"externalIdentifier": "DJP1001",
 		"type":               string(access.OrderTypeCollection),
@@ -97,7 +105,7 @@ func succeededCollectionNotify(now time.Time) map[string]interface{} {
 		"callbackURL":        "https://api.example.com" + constants.DefaultRerouteMoneyWebhookPath,
 		"createdAt":          now.Add(-time.Minute).UTC().Format(time.RFC3339Nano),
 		"updatedAt":          now.UTC().Format(time.RFC3339Nano),
-	}
+	})
 }
 
 func TestParseNotifyVerifiesSignedCollectionPush(t *testing.T) {
@@ -114,9 +122,16 @@ func TestParseNotifyVerifiesSignedCollectionPush(t *testing.T) {
 	if data.ExternalIdentifier != "DJP1001" {
 		t.Fatalf("ExternalIdentifier = %q", data.ExternalIdentifier)
 	}
-	// 订单层的号只留在原文里，解析结果不再暴露成字段
-	if data.Raw["uniqueIdentifier"] != "ord-1" {
+	// 顶层是单据号，它才是 provider_ref 与查单要用的号；order 层的号只留在原文里
+	if data.UniqueIdentifier != "col-1" {
+		t.Fatalf("UniqueIdentifier = %q, want col-1", data.UniqueIdentifier)
+	}
+	if data.Raw["uniqueIdentifier"] != "col-1" {
 		t.Fatalf("Raw = %+v", data.Raw)
+	}
+	nested := data.Raw["order"].(map[string]interface{})
+	if nested["uniqueIdentifier"] != "ord-1" {
+		t.Fatalf("Raw order = %+v", nested)
 	}
 	if data.Status != constants.PaymentStatusSuccess {
 		t.Fatalf("Status = %q, want %q", data.Status, constants.PaymentStatusSuccess)
@@ -136,8 +151,11 @@ func TestParseNotifyVerifiesSignedCollectionPush(t *testing.T) {
 	if data.PaidAt == nil || !data.PaidAt.Equal(now) {
 		t.Fatalf("PaidAt = %v, want %s", data.PaidAt, now)
 	}
-	if data.Raw["externalIdentifier"] != "DJP1001" {
-		t.Fatalf("Raw = %+v", data.Raw)
+	if data.Raw["externalIdentifier"] != nil {
+		t.Fatalf("外部单号挂在 order 那一层，顶层不该有它: %+v", data.Raw)
+	}
+	if nested["externalIdentifier"] != "DJP1001" {
+		t.Fatalf("Raw order = %+v", nested)
 	}
 }
 
@@ -178,7 +196,7 @@ func TestParseNotifyRejectsTamperedBody(t *testing.T) {
 	cfg := notifyConfig(t, publicPEM, notifyURL)
 	// 签名覆盖原始报文，改动金额后必须验不过
 	headers := signedHeaders(t, privateKey, notifyURL, now.UnixMilli(), body)
-	tampered := notifyBody(t, map[string]interface{}{
+	tampered := collectionDocument("col-1", map[string]interface{}{
 		"uniqueIdentifier":   "ord-1",
 		"externalIdentifier": "DJP1001",
 		"type":               string(access.OrderTypeCollection),
@@ -186,7 +204,7 @@ func TestParseNotifyRejectsTamperedBody(t *testing.T) {
 		"paymentAmount":      map[string]interface{}{"currency": "USD", "value": 1},
 		"callbackURL":        notifyURL,
 	})
-	if _, err := ParseNotify(cfg, headers, tampered, now); !errors.Is(err, ErrSignatureInvalid) {
+	if _, err := ParseNotify(cfg, headers, notifyBody(t, tampered), now); !errors.Is(err, ErrSignatureInvalid) {
 		t.Fatalf("err = %v, want ErrSignatureInvalid", err)
 	}
 }
@@ -232,12 +250,12 @@ func TestParseNotifyIgnoresNonCollectionPush(t *testing.T) {
 	// 代付单可能推到同一个地址，它的成功与本站订单收款无关，状态留空让上层按“无需处理”忽略
 	privateKey, publicPEM := newPlatformKey(t)
 	now := time.Now().UTC().Truncate(time.Second)
-	body := notifyBody(t, map[string]interface{}{
-		"uniqueIdentifier":   "pay-1",
+	body := notifyBody(t, collectionDocument("pay-1", map[string]interface{}{
+		"uniqueIdentifier":   "ord-2",
 		"type":               string(access.OrderTypePayment),
 		"status":             string(access.OrderStatusSucceeded),
 		"externalIdentifier": "DJP1001",
-	})
+	}))
 	notifyURL := "https://api.example.com" + constants.DefaultRerouteMoneyWebhookPath
 	cfg := notifyConfig(t, publicPEM, notifyURL)
 	headers := signedHeaders(t, privateKey, notifyURL, now.UnixMilli(), body)
@@ -269,23 +287,35 @@ func TestParseNotifyRequiresPaymentAmountOnCollectionPush(t *testing.T) {
 	}{
 		{
 			name: "missing payment amount",
-			payload: map[string]interface{}{
+			payload: collectionDocument("col-1", map[string]interface{}{
 				"uniqueIdentifier":   "ord-1",
 				"externalIdentifier": "DJP1001",
 				"type":               string(access.OrderTypeCollection),
 				"status":             string(access.OrderStatusSucceeded),
-			},
+			}),
 			accepted: ErrResponseInvalid,
 		},
 		{
 			name: "unregistered currency",
-			payload: map[string]interface{}{
+			payload: collectionDocument("col-1", map[string]interface{}{
 				"uniqueIdentifier":   "ord-1",
 				"externalIdentifier": "DJP1001",
 				"type":               string(access.OrderTypeCollection),
 				"status":             string(access.OrderStatusFailed),
 				"paymentAmount":      map[string]interface{}{"currency": "AAA", "value": 100},
-			},
+			}),
+			accepted: ErrResponseInvalid,
+		},
+		{
+			// 单据号会被落成 provider_ref，空号等于把兜底查单废掉，只能报错重投
+			name: "missing document identifier",
+			payload: collectionDocument("", map[string]interface{}{
+				"uniqueIdentifier":   "ord-1",
+				"externalIdentifier": "DJP1001",
+				"type":               string(access.OrderTypeCollection),
+				"status":             string(access.OrderStatusSucceeded),
+				"paymentAmount":      map[string]interface{}{"currency": "USD", "value": 2050},
+			}),
 			accepted: ErrResponseInvalid,
 		},
 	}
@@ -308,7 +338,7 @@ func TestParseNotifyFailedPushHasNoPaidAt(t *testing.T) {
 	privateKey, publicPEM := newPlatformKey(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	payload := succeededCollectionNotify(now)
-	payload["status"] = string(access.OrderStatusFailed)
+	payload["order"].(map[string]interface{})["status"] = string(access.OrderStatusFailed)
 	body := notifyBody(t, payload)
 	notifyURL := "https://api.example.com" + constants.DefaultRerouteMoneyWebhookPath
 	cfg := notifyConfig(t, publicPEM, notifyURL)

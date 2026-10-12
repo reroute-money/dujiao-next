@@ -371,14 +371,17 @@ func TestRerouteMoneyAdapter_ParseWebhookMapsVerifiedPush(t *testing.T) {
 	cfgJSON, privateKey := pushConfig(t, "https://access.example.com")
 	now := time.Now().UTC().Truncate(time.Second)
 	body, err := json.Marshal(map[string]interface{}{
-		"uniqueIdentifier":   "ord-1",
-		"externalIdentifier": "DJP1001",
-		"type":               string(access.OrderTypeCollection),
-		"status":             string(access.OrderStatusSucceeded),
-		"paymentAmount":      map[string]interface{}{"currency": "USD", "value": 2050},
-		"callbackURL":        notifyURL,
-		"createdAt":          now.Add(-time.Minute).Format(time.RFC3339Nano),
-		"updatedAt":          now.Format(time.RFC3339Nano),
+		"uniqueIdentifier": "col-1",
+		"order": map[string]interface{}{
+			"uniqueIdentifier":   "ord-1",
+			"externalIdentifier": "DJP1001",
+			"type":               string(access.OrderTypeCollection),
+			"status":             string(access.OrderStatusSucceeded),
+			"paymentAmount":      map[string]interface{}{"currency": "USD", "value": 2050},
+			"callbackURL":        notifyURL,
+			"createdAt":          now.Add(-time.Minute).Format(time.RFC3339Nano),
+			"updatedAt":          now.Format(time.RFC3339Nano),
+		},
 	})
 	if err != nil {
 		t.Fatalf("marshal push: %v", err)
@@ -395,12 +398,16 @@ func TestRerouteMoneyAdapter_ParseWebhookMapsVerifiedPush(t *testing.T) {
 	if result.OrderNo != "DJP1001" {
 		t.Fatalf("OrderNo = %q, want DJP1001", result.OrderNo)
 	}
-	// 推送带的是订单层的号，查单接口不认它，所以不能拿它覆盖下单时落好的收款单号
-	if result.ProviderRef != "" {
-		t.Fatalf("ProviderRef = %q, want empty so provider_ref keeps the collection order id", result.ProviderRef)
+	// 推送顶层是单据号，与下单回显、查单认的是同一个号，落进 provider_ref
+	if result.ProviderRef != "col-1" {
+		t.Fatalf("ProviderRef = %q, want col-1", result.ProviderRef)
 	}
-	if result.Payload["uniqueIdentifier"] != "ord-1" {
-		t.Fatalf("payload must still record the pushed order number, got %#v", result.Payload["uniqueIdentifier"])
+	if result.Payload["uniqueIdentifier"] != "col-1" {
+		t.Fatalf("payload must record the pushed document number, got %#v", result.Payload["uniqueIdentifier"])
+	}
+	nested := result.Payload["order"].(map[string]interface{})
+	if nested["uniqueIdentifier"] != "ord-1" {
+		t.Fatalf("payload must keep the order-layer number for auditing, got %#v", nested["uniqueIdentifier"])
 	}
 	if result.Status != constants.PaymentStatusSuccess {
 		t.Fatalf("Status = %q, want %q", result.Status, constants.PaymentStatusSuccess)
@@ -423,12 +430,15 @@ func TestRerouteMoneyAdapter_ParseWebhookMapsVerifiedPush(t *testing.T) {
 
 	// 报文改了却不重签：验签必须失败，且翻译成统一签名错误
 	tampered, _ := json.Marshal(map[string]interface{}{
-		"uniqueIdentifier":   "ord-1",
-		"externalIdentifier": "DJP1001",
-		"type":               string(access.OrderTypeCollection),
-		"status":             string(access.OrderStatusSucceeded),
-		"paymentAmount":      map[string]interface{}{"currency": "USD", "value": 1},
-		"callbackURL":        notifyURL,
+		"uniqueIdentifier": "col-1",
+		"order": map[string]interface{}{
+			"uniqueIdentifier":   "ord-1",
+			"externalIdentifier": "DJP1001",
+			"type":               string(access.OrderTypeCollection),
+			"status":             string(access.OrderStatusSucceeded),
+			"paymentAmount":      map[string]interface{}{"currency": "USD", "value": 1},
+			"callbackURL":        notifyURL,
+		},
 	})
 	if _, err := webhooker.ParseWebhook(context.Background(), cfgJSON, signPush(t, privateKey, now.UnixMilli(), body), tampered, now); !errors.Is(err, paymentcontract.ErrGatewaySignatureInvalid) {
 		t.Fatalf("err = %v, want ErrGatewaySignatureInvalid", err)
@@ -439,10 +449,13 @@ func TestRerouteMoneyAdapter_ParseWebhookIgnoresNonCollectionPush(t *testing.T) 
 	cfgJSON, privateKey := pushConfig(t, "https://access.example.com")
 	now := time.Now().UTC().Truncate(time.Second)
 	body, err := json.Marshal(map[string]interface{}{
-		"uniqueIdentifier":   "pay-1",
-		"externalIdentifier": "DJP1001",
-		"type":               string(access.OrderTypePayment),
-		"status":             string(access.OrderStatusSucceeded),
+		"uniqueIdentifier": "pay-1",
+		"order": map[string]interface{}{
+			"uniqueIdentifier":   "ord-2",
+			"externalIdentifier": "DJP1001",
+			"type":               string(access.OrderTypePayment),
+			"status":             string(access.OrderStatusSucceeded),
+		},
 	})
 	if err != nil {
 		t.Fatalf("marshal push: %v", err)

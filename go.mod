@@ -16,7 +16,7 @@ require (
 	github.com/mojocn/base64Captcha v1.3.8
 	github.com/pquerna/otp v1.5.0
 	github.com/redis/go-redis/v9 v9.18.0
-	github.com/reroute-money/access-toolkit/golang v0.0.0-20261010092951-55890ff23f11
+	github.com/reroute-money/access-toolkit/golang v0.0.0-20261012075009-110319ac8ce9
 	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1

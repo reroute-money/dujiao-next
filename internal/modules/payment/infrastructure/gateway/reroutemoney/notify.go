@@ -13,10 +13,12 @@ import (
 
 // NotifyData 平台订单推送的解析结果。
 //
-// 推送报文是 Order 实体本身，它带的 uniqueIdentifier 是 orders 表的号，与下单回显的收款单号
-// （collectionOrder.uniqueIdentifier）不是同一个，查单接口只认后者；因此这里不暴露单号字段，
-// 只在 Raw 里留痕，免得它被当成 provider_ref 存回去。
+// 推送报文是业务单据本身（代收推收款单、代付推付款单），交易事实在包裹的 order 那一层。
+// 顶层 uniqueIdentifier 就是下单时回显、查单接口认得的单据号，与 provider_ref 存的同一个号；
+// order.uniqueIdentifier 是另一张表（orders）的号，只能用来对账，拿它查单必然查空。
 type NotifyData struct {
+	// UniqueIdentifier 单据号 | 代收是收款单号、代付是付款单号
+	UniqueIdentifier string
 	// ExternalIdentifier 外部单号 | 即 dujiao 的 gateway order no
 	ExternalIdentifier string
 	// Type 单据种类
@@ -66,33 +68,41 @@ func ParseNotify(cfg *Config, headers map[string]string, body []byte, now time.T
 	if err != nil {
 		return nil, err
 	}
+	// 交易事实都在包裹的订单那一层，单据那一头只贡献单号与收款方式
+	order := &notify.Order
 	data := &NotifyData{
-		ExternalIdentifier: strings.TrimSpace(notify.ExternalIdentifier),
-		Type:               strings.TrimSpace(string(notify.Type)),
-		Status:             ToPaymentStatus(notify.Status),
-		RawStatus:          strings.TrimSpace(string(notify.Status)),
-		CallbackURL:        strings.TrimSpace(notify.CallbackURL),
+		UniqueIdentifier:   strings.TrimSpace(notify.UniqueIdentifier),
+		ExternalIdentifier: strings.TrimSpace(order.ExternalIdentifier),
+		Type:               strings.TrimSpace(string(order.Type)),
+		Status:             ToPaymentStatus(order.Status),
+		RawStatus:          strings.TrimSpace(string(order.Status)),
+		CallbackURL:        strings.TrimSpace(order.CallbackURL),
 		Raw:                raw,
 	}
 
 	// 代付单可能复用同一个推送地址，但它的成功与本站订单收款无关，按“无需处理”忽略。
-	if notify.Type != access.OrderTypeCollection {
+	if order.Type != access.OrderTypeCollection {
 		data.Status = ""
 		return data, nil
 	}
 
-	if notify.PaymentAmount == nil {
+	// 单据号会被上层存成 provider_ref，空号等于把兜底查单废掉，宁可报错让平台重投。
+	if data.UniqueIdentifier == "" {
+		return nil, fmt.Errorf("%w: collection order uniqueIdentifier is missing in notify", ErrResponseInvalid)
+	}
+
+	if order.PaymentAmount == nil {
 		return nil, fmt.Errorf("%w: paymentAmount is missing in notify", ErrResponseInvalid)
 	}
-	currency := strings.ToUpper(string(notify.PaymentAmount.Currency))
-	amount, err := FromMinorUnits(notify.PaymentAmount.Value, currency)
+	currency := strings.ToUpper(string(order.PaymentAmount.Currency))
+	amount, err := FromMinorUnits(order.PaymentAmount.Value, currency)
 	if err != nil {
 		return nil, err
 	}
 	data.PaymentAmount = amount
 	data.PaymentCurrency = currency
-	if notify.Status == access.OrderStatusSucceeded {
-		paidAt := notify.UpdatedAt
+	if order.Status == access.OrderStatusSucceeded {
+		paidAt := order.UpdatedAt
 		data.PaidAt = &paidAt
 	}
 	return data, nil
