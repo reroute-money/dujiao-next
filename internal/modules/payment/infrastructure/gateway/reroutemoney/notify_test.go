@@ -88,7 +88,7 @@ func notifyBody(t *testing.T, payload map[string]interface{}) []byte {
 // succeededCollectionNotify 一笔标准的代收成功推送
 func succeededCollectionNotify(now time.Time) map[string]interface{} {
 	return map[string]interface{}{
-		"uniqueIdentifier":   "col-1",
+		"uniqueIdentifier":   "ord-1",
 		"externalIdentifier": "DJP1001",
 		"type":               string(access.OrderTypeCollection),
 		"status":             string(access.OrderStatusSucceeded),
@@ -111,8 +111,12 @@ func TestParseNotifyVerifiesSignedCollectionPush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseNotify: %v", err)
 	}
-	if data.UniqueIdentifier != "col-1" || data.ExternalIdentifier != "DJP1001" {
-		t.Fatalf("identifiers = %+v", data)
+	if data.ExternalIdentifier != "DJP1001" {
+		t.Fatalf("ExternalIdentifier = %q", data.ExternalIdentifier)
+	}
+	// 订单层的号只留在原文里，解析结果不再暴露成字段
+	if data.Raw["uniqueIdentifier"] != "ord-1" {
+		t.Fatalf("Raw = %+v", data.Raw)
 	}
 	if data.Status != constants.PaymentStatusSuccess {
 		t.Fatalf("Status = %q, want %q", data.Status, constants.PaymentStatusSuccess)
@@ -175,7 +179,7 @@ func TestParseNotifyRejectsTamperedBody(t *testing.T) {
 	// 签名覆盖原始报文，改动金额后必须验不过
 	headers := signedHeaders(t, privateKey, notifyURL, now.UnixMilli(), body)
 	tampered := notifyBody(t, map[string]interface{}{
-		"uniqueIdentifier":   "col-1",
+		"uniqueIdentifier":   "ord-1",
 		"externalIdentifier": "DJP1001",
 		"type":               string(access.OrderTypeCollection),
 		"status":             string(access.OrderStatusSucceeded),
@@ -266,7 +270,7 @@ func TestParseNotifyRequiresPaymentAmountOnCollectionPush(t *testing.T) {
 		{
 			name: "missing payment amount",
 			payload: map[string]interface{}{
-				"uniqueIdentifier":   "col-1",
+				"uniqueIdentifier":   "ord-1",
 				"externalIdentifier": "DJP1001",
 				"type":               string(access.OrderTypeCollection),
 				"status":             string(access.OrderStatusSucceeded),
@@ -276,7 +280,7 @@ func TestParseNotifyRequiresPaymentAmountOnCollectionPush(t *testing.T) {
 		{
 			name: "unregistered currency",
 			payload: map[string]interface{}{
-				"uniqueIdentifier":   "col-1",
+				"uniqueIdentifier":   "ord-1",
 				"externalIdentifier": "DJP1001",
 				"type":               string(access.OrderTypeCollection),
 				"status":             string(access.OrderStatusFailed),

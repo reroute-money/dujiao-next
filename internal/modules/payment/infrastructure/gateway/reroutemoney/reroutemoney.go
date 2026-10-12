@@ -69,7 +69,8 @@ type CreateInput struct {
 
 // OrderSnapshot 平台回显的单据 | 下单响应与查询响应共用。
 type OrderSnapshot struct {
-	// UniqueIdentifier 平台单号
+	// UniqueIdentifier 收款单号 | collectionOrder 自身的 uniqueIdentifier，查单接口按它或外部单号定位；
+	// collectionOrder.order.uniqueIdentifier 是另一张表的号，查单接口不认它，不能拿来当 provider_ref
 	UniqueIdentifier string
 	// ExternalIdentifier 外部单号
 	ExternalIdentifier string
@@ -238,14 +239,14 @@ func CreateCollectionOrder(ctx context.Context, cfg *Config, input CreateInput) 
 		return nil, mapAccessError(err)
 	}
 
-	snapshot, err := toSnapshot(&response.Data.Order)
+	snapshot, err := toSnapshot(&response.Data)
 	if err != nil {
 		return nil, err
 	}
 	return &CreateResult{RedirectURL: strings.TrimSpace(response.Data.RedirectURL), Order: snapshot}, nil
 }
 
-// QueryCollectionOrder 主动查询代收单 | identifier 为平台单号或外部单号。
+// QueryCollectionOrder 主动查询代收单 | identifier 为收款单号（下单回显的那个）或外部单号。
 func QueryCollectionOrder(ctx context.Context, cfg *Config, identifier string) (*QueryResult, error) {
 	client, err := newClient(cfg)
 	if err != nil {
@@ -258,16 +259,25 @@ func QueryCollectionOrder(ctx context.Context, cfg *Config, identifier string) (
 	if err != nil {
 		return nil, mapAccessError(err)
 	}
-	snapshot, err := toSnapshot(&response.Data.Order)
+	snapshot, err := toSnapshot(&response.Data)
 	if err != nil {
 		return nil, err
 	}
 	return &QueryResult{Order: snapshot}, nil
 }
 
-// toSnapshot 把平台单据翻译成 dujiao 口径。
-func toSnapshot(order *access.OrderResult) (OrderSnapshot, error) {
-	if order == nil {
+// toSnapshot 把平台单据翻译成 dujiao 口径 | 单号取 collectionOrder 自身的 uniqueIdentifier，
+// 交易事实（状态、金额、外部单号）取它一对一指向的 order。
+func toSnapshot(data *access.CollectionOrderResult) (OrderSnapshot, error) {
+	if data == nil {
+		return OrderSnapshot{}, fmt.Errorf("%w: collection order is missing in response", ErrResponseInvalid)
+	}
+	uniqueIdentifier := strings.TrimSpace(data.UniqueIdentifier)
+	if uniqueIdentifier == "" {
+		return OrderSnapshot{}, fmt.Errorf("%w: collection order uniqueIdentifier is missing in response", ErrResponseInvalid)
+	}
+	order := &data.Order
+	if strings.TrimSpace(order.UniqueIdentifier) == "" {
 		return OrderSnapshot{}, fmt.Errorf("%w: order is missing in response", ErrResponseInvalid)
 	}
 	raw, err := rawMap(order)
@@ -275,7 +285,7 @@ func toSnapshot(order *access.OrderResult) (OrderSnapshot, error) {
 		return OrderSnapshot{}, err
 	}
 	snapshot := OrderSnapshot{
-		UniqueIdentifier:   strings.TrimSpace(order.UniqueIdentifier),
+		UniqueIdentifier:   uniqueIdentifier,
 		ExternalIdentifier: strings.TrimSpace(order.ExternalIdentifier),
 		Status:             ToPaymentStatus(order.Status),
 		RawStatus:          strings.TrimSpace(string(order.Status)),

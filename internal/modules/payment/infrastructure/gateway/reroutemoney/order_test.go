@@ -40,7 +40,8 @@ func envelopeOK(t *testing.T, data interface{}) string {
 
 func collectionOrderData(redirectURL string) map[string]interface{} {
 	order := map[string]interface{}{
-		"uniqueIdentifier":   "col-1",
+		// 订单自身的平台单号（orders 表的 uuid）：查单接口不认它，不能当 provider_ref
+		"uniqueIdentifier":   "ord-1",
 		"externalIdentifier": "DJP1001",
 		"type":               string(access.OrderTypeCollection),
 		"status":             string(access.OrderStatusCreated),
@@ -48,6 +49,7 @@ func collectionOrderData(redirectURL string) map[string]interface{} {
 		"receiptAmount":      map[string]interface{}{"currency": "USD", "value": 2050},
 		"callbackURL":        "https://api.example.com" + constants.DefaultRerouteMoneyWebhookPath,
 	}
+	// 收款单号在 collectionOrder 这一层，与 order.uniqueIdentifier 是两个不同实体的号
 	data := map[string]interface{}{"uniqueIdentifier": "col-1", "order": order}
 	if redirectURL != "" {
 		data["redirectURL"] = redirectURL
@@ -129,6 +131,7 @@ func TestCreateCollectionOrdersLocksPaymentSide(t *testing.T) {
 	if result.RedirectURL != "https://checkout.example.com/col-1" {
 		t.Fatalf("RedirectURL = %q", result.RedirectURL)
 	}
+	// 存回的单号必须是 collectionOrder 这一层的收款单号，查单接口只认它和外部单号
 	if result.Order.UniqueIdentifier != "col-1" || result.Order.ExternalIdentifier != "DJP1001" {
 		t.Fatalf("snapshot = %+v", result.Order)
 	}
@@ -257,6 +260,28 @@ func TestQueryCollectionOrderReadsSettledAmount(t *testing.T) {
 	}
 	if result.Order.PaymentCurrency != "USDT" {
 		t.Fatalf("PaymentCurrency = %q", result.Order.PaymentCurrency)
+	}
+}
+
+func TestCollectionOrderRejectsResponseWithoutCollectionIdentifier(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		data := collectionOrderData("https://checkout.example.com/col-1")
+		data["uniqueIdentifier"] = ""
+		_, _ = w.Write([]byte(envelopeOK(t, data)))
+	}))
+	defer server.Close()
+
+	// 没有收款单号就无从按平台单号查单，静默建单会留下一笔兜底查不回来的待支付
+	cfg := newConfiguredClient(t, server.URL)
+	if _, err := CreateCollectionOrder(context.Background(), cfg, CreateInput{
+		ExternalIdentifier: "DJP1001",
+		PaymentCurrency:    "USD",
+		PaymentAmount:      decimal.NewFromInt(1),
+	}); !errors.Is(err, ErrResponseInvalid) {
+		t.Fatalf("create err = %v, want ErrResponseInvalid", err)
+	}
+	if _, err := QueryCollectionOrder(context.Background(), cfg, "col-1"); !errors.Is(err, ErrResponseInvalid) {
+		t.Fatalf("query err = %v, want ErrResponseInvalid", err)
 	}
 }
 

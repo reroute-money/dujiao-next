@@ -154,8 +154,10 @@ func (a *rerouteMoneyAdapter) ParseWebhook(_ context.Context, raw jsonmap.JSON, 
 	}
 
 	return &paymentcontract.GatewayCallbackResult{
-		OrderNo:     data.ExternalIdentifier,
-		ProviderRef: data.UniqueIdentifier,
+		OrderNo: data.ExternalIdentifier,
+		// 推送报文是平台的 Order 实体，它带的 uniqueIdentifier 是 orders 表的号，查单接口不认它；
+		// 拿它覆盖 provider_ref 会让兜底查单必然查空，所以下单时落好的收款单号保持不变。
+		ProviderRef: "",
 		Status:      data.Status,
 		Amount:      money.FromDecimal(data.PaymentAmount),
 		Currency:    data.PaymentCurrency,

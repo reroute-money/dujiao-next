@@ -12,9 +12,11 @@ import (
 )
 
 // NotifyData 平台订单推送的解析结果。
+//
+// 推送报文是 Order 实体本身，它带的 uniqueIdentifier 是 orders 表的号，与下单回显的收款单号
+// （collectionOrder.uniqueIdentifier）不是同一个，查单接口只认后者；因此这里不暴露单号字段，
+// 只在 Raw 里留痕，免得它被当成 provider_ref 存回去。
 type NotifyData struct {
-	// UniqueIdentifier 平台单号
-	UniqueIdentifier string
 	// ExternalIdentifier 外部单号 | 即 dujiao 的 gateway order no
 	ExternalIdentifier string
 	// Type 单据种类
@@ -65,7 +67,6 @@ func ParseNotify(cfg *Config, headers map[string]string, body []byte, now time.T
 		return nil, err
 	}
 	data := &NotifyData{
-		UniqueIdentifier:   strings.TrimSpace(notify.UniqueIdentifier),
 		ExternalIdentifier: strings.TrimSpace(notify.ExternalIdentifier),
 		Type:               strings.TrimSpace(string(notify.Type)),
 		Status:             ToPaymentStatus(notify.Status),

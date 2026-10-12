@@ -372,16 +372,23 @@ func TestRawMapKeepsEveryPlatformField(t *testing.T) {
 func TestToSnapshotTranslatesMinorUnits(t *testing.T) {
 	value := int64(12_345)
 	updatedAt := time.Now().UTC().Truncate(time.Second)
-	snapshot, err := toSnapshot(&access.OrderResult{
-		UniqueIdentifier:   "order-1",
-		ExternalIdentifier: "DJP1001",
-		Status:             access.OrderStatusSucceeded,
-		PaymentAmount:      &access.Money{Currency: access.CurrencyUSD, Value: value},
-		ReceiptAmount:      &access.Money{Currency: access.CurrencyUSDT, Value: value},
-		UpdatedAt:          updatedAt,
+	snapshot, err := toSnapshot(&access.CollectionOrderResult{
+		UniqueIdentifier: "col-1",
+		Order: access.OrderResult{
+			UniqueIdentifier:   "ord-1",
+			ExternalIdentifier: "DJP1001",
+			Status:             access.OrderStatusSucceeded,
+			PaymentAmount:      &access.Money{Currency: access.CurrencyUSD, Value: value},
+			ReceiptAmount:      &access.Money{Currency: access.CurrencyUSDT, Value: value},
+			UpdatedAt:          updatedAt,
+		},
 	})
 	if err != nil {
 		t.Fatalf("toSnapshot: %v", err)
+	}
+	// 单号取代收单层的 col-1，订单层的 ord-1 只留在 Raw 里
+	if snapshot.UniqueIdentifier != "col-1" {
+		t.Fatalf("UniqueIdentifier = %q, want col-1", snapshot.UniqueIdentifier)
 	}
 	if snapshot.Status != constants.PaymentStatusSuccess {
 		t.Fatalf("Status = %q", snapshot.Status)
@@ -398,7 +405,7 @@ func TestToSnapshotTranslatesMinorUnits(t *testing.T) {
 	if snapshot.RawStatus != string(access.OrderStatusSucceeded) {
 		t.Fatalf("RawStatus = %q", snapshot.RawStatus)
 	}
-	if snapshot.Raw["uniqueIdentifier"] != "order-1" {
+	if snapshot.Raw["uniqueIdentifier"] != "ord-1" {
 		t.Fatalf("Raw = %+v", snapshot.Raw)
 	}
 	if !snapshot.UpdatedAt.Equal(updatedAt) {
@@ -408,15 +415,27 @@ func TestToSnapshotTranslatesMinorUnits(t *testing.T) {
 
 func TestToSnapshotRejectsUnregisteredCurrency(t *testing.T) {
 	value := int64(100)
-	if _, err := toSnapshot(&access.OrderResult{
-		PaymentAmount: &access.Money{Currency: access.Currency("AAA"), Value: value},
+	if _, err := toSnapshot(&access.CollectionOrderResult{
+		UniqueIdentifier: "col-1",
+		Order: access.OrderResult{
+			UniqueIdentifier: "ord-1",
+			PaymentAmount:    &access.Money{Currency: access.Currency("AAA"), Value: value},
+		},
 	}); !errors.Is(err, ErrResponseInvalid) {
 		t.Fatalf("err = %v, want ErrResponseInvalid", err)
 	}
 }
 
-func TestToSnapshotNilOrder(t *testing.T) {
+func TestToSnapshotRejectsIncompleteResponse(t *testing.T) {
 	if _, err := toSnapshot(nil); !errors.Is(err, ErrResponseInvalid) {
-		t.Fatalf("err = %v, want ErrResponseInvalid", err)
+		t.Fatalf("nil data err = %v, want ErrResponseInvalid", err)
+	}
+	if _, err := toSnapshot(&access.CollectionOrderResult{
+		Order: access.OrderResult{UniqueIdentifier: "ord-1"},
+	}); !errors.Is(err, ErrResponseInvalid) {
+		t.Fatalf("missing collection identifier err = %v, want ErrResponseInvalid", err)
+	}
+	if _, err := toSnapshot(&access.CollectionOrderResult{UniqueIdentifier: "col-1"}); !errors.Is(err, ErrResponseInvalid) {
+		t.Fatalf("missing order err = %v, want ErrResponseInvalid", err)
 	}
 }

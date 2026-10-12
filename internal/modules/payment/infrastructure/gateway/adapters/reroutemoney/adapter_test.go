@@ -76,7 +76,8 @@ func validJSON(t *testing.T, baseURL string) jsonmap.JSON {
 func collectionResponse(t *testing.T, status access.OrderStatus, redirectURL string) string {
 	t.Helper()
 	order := map[string]interface{}{
-		"uniqueIdentifier":   "col-1",
+		// 订单层的平台单号：查单接口不认它，provider_ref 不能取它
+		"uniqueIdentifier":   "ord-1",
 		"externalIdentifier": "DJP1001",
 		"type":               string(access.OrderTypeCollection),
 		"status":             string(status),
@@ -84,6 +85,7 @@ func collectionResponse(t *testing.T, status access.OrderStatus, redirectURL str
 		"receiptAmount":      map[string]interface{}{"currency": "USDT", "value": 20480000},
 		"callbackURL":        notifyURL,
 	}
+	// 收款单号在 collectionOrder 这一层，才是 adapter 存回 provider_ref 的那个号
 	data := map[string]interface{}{"uniqueIdentifier": "col-1", "order": order}
 	if redirectURL != "" {
 		data["redirectURL"] = redirectURL
@@ -217,7 +219,7 @@ func TestRerouteMoneyAdapter_CreatePaymentLocksSentFacts(t *testing.T) {
 	if got := result.Payload["redirect_url"]; got != "https://checkout.example.com/col-1" {
 		t.Fatalf("payload redirect_url = %#v", got)
 	}
-	if got := result.Payload["uniqueIdentifier"]; got != "col-1" {
+	if got := result.Payload["uniqueIdentifier"]; got != "ord-1" {
 		t.Fatalf("payload must keep the platform order echo, got %#v", got)
 	}
 
@@ -369,7 +371,7 @@ func TestRerouteMoneyAdapter_ParseWebhookMapsVerifiedPush(t *testing.T) {
 	cfgJSON, privateKey := pushConfig(t, "https://access.example.com")
 	now := time.Now().UTC().Truncate(time.Second)
 	body, err := json.Marshal(map[string]interface{}{
-		"uniqueIdentifier":   "col-1",
+		"uniqueIdentifier":   "ord-1",
 		"externalIdentifier": "DJP1001",
 		"type":               string(access.OrderTypeCollection),
 		"status":             string(access.OrderStatusSucceeded),
@@ -390,8 +392,15 @@ func TestRerouteMoneyAdapter_ParseWebhookMapsVerifiedPush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseWebhook: %v", err)
 	}
-	if result.OrderNo != "DJP1001" || result.ProviderRef != "col-1" {
-		t.Fatalf("identifiers = %+v", result)
+	if result.OrderNo != "DJP1001" {
+		t.Fatalf("OrderNo = %q, want DJP1001", result.OrderNo)
+	}
+	// 推送带的是订单层的号，查单接口不认它，所以不能拿它覆盖下单时落好的收款单号
+	if result.ProviderRef != "" {
+		t.Fatalf("ProviderRef = %q, want empty so provider_ref keeps the collection order id", result.ProviderRef)
+	}
+	if result.Payload["uniqueIdentifier"] != "ord-1" {
+		t.Fatalf("payload must still record the pushed order number, got %#v", result.Payload["uniqueIdentifier"])
 	}
 	if result.Status != constants.PaymentStatusSuccess {
 		t.Fatalf("Status = %q, want %q", result.Status, constants.PaymentStatusSuccess)
@@ -414,7 +423,7 @@ func TestRerouteMoneyAdapter_ParseWebhookMapsVerifiedPush(t *testing.T) {
 
 	// 报文改了却不重签：验签必须失败，且翻译成统一签名错误
 	tampered, _ := json.Marshal(map[string]interface{}{
-		"uniqueIdentifier":   "col-1",
+		"uniqueIdentifier":   "ord-1",
 		"externalIdentifier": "DJP1001",
 		"type":               string(access.OrderTypeCollection),
 		"status":             string(access.OrderStatusSucceeded),
