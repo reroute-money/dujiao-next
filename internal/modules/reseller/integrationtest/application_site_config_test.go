@@ -164,6 +164,7 @@ func TestResellerSiteConfigServiceApplyPublicConfigOverlay(t *testing.T) {
 		},
 		"announcement": map[string]interface{}{"enabled": true},
 		"nav_config":   map[string]interface{}{"builtin": map[string]interface{}{"blog": false}},
+		"scripts":      []interface{}{map[string]interface{}{"name": "main-analytics"}},
 	}
 	tenant := ResellerTenantContext("shop.example.test", resellerID, user.ID, "shop.example.test")
 	out, err := svc.ApplyPublicConfigOverlay(context.Background(), tenant, base)
@@ -179,6 +180,9 @@ func TestResellerSiteConfigServiceApplyPublicConfigOverlay(t *testing.T) {
 	}
 	if out["currency"] != "CNY" {
 		t.Fatalf("global inherited fields should remain, got currency=%v", out["currency"])
+	}
+	if scripts, _ := out["scripts"].([]interface{}); len(scripts) != 0 {
+		t.Fatalf("main-site custom scripts must not run on reseller sites, got %+v", out["scripts"])
 	}
 	contact := resellerSiteConfigTestMap(out["contact"])
 	if contact["email"] != "help@shop.example.test" || contact["support_url"] != "https://shop.example.test/support" {

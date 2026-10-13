@@ -200,3 +200,40 @@ func TestCreateOrderPassesManualFormDataForAllFulfillmentTypes(t *testing.T) {
 		})
 	}
 }
+
+type canceledRefOrders struct{ formTestOrders }
+
+func (s *canceledRefOrders) GetOrderByUser(uint, uint) (*orderdomain.Order, error) {
+	return &orderdomain.Order{ID: 50, OrderNo: "OLD", Status: constants.OrderStatusCanceled}, nil
+}
+
+type existingRefs struct{ formTestRefs }
+
+func (existingRefs) GetByCredentialAndDownstreamNo(uint, string) (*downstreamcallbackdomain.OrderRef, error) {
+	return &downstreamcallbackdomain.OrderRef{OrderID: 50}, nil
+}
+
+// 余额不足导致旧单被取消后，下游用同一单号重试必须真正重新下单，而不是拿回已取消的旧单。
+func TestCreateOrderRecreatesWhenSameDownstreamNoWasCanceled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	orders := &canceledRefOrders{}
+	handler := &Handler{Dependencies: Dependencies{
+		ProductRepository: formTestProducts{productdomain.Product{ID: 18, IsActive: true, FulfillmentType: constants.FulfillmentTypeAuto}},
+		SKUs:              formTestSKUs{}, Orders: orders, Payments: formTestPayments{},
+		DownstreamRefs: existingRefs{}, Settings: formTestSettings{},
+	}}
+	body, _ := json.Marshal(map[string]interface{}{"sku_id": 19, "quantity": 1, "downstream_order_no": "LOCAL-1"})
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/upstream/orders", bytes.NewReader(body))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set(upstreamUserIDKey, uint(1))
+	ctx.Set(upstreamCredentialIDKey, uint(1))
+	handler.CreateOrder(ctx)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if orders.received.Items == nil {
+		t.Fatalf("expected a new order to be created, body=%s", recorder.Body.String())
+	}
+}

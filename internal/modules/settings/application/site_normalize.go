@@ -1,6 +1,7 @@
 package settingsapp
 
 import (
+	settingsvalue "github.com/dujiao-next/internal/modules/settings/schema/value"
 	"regexp"
 	"strings"
 
@@ -79,7 +80,7 @@ func normalizeSiteScripts(raw interface{}) []interface{} {
 
 		result = append(result, map[string]interface{}{
 			"name":     normalizeSettingTextWithRuneLimit(itemMap["name"], settingSiteScriptNameMaxRuneSize),
-			"enabled":  parseSettingBool(itemMap["enabled"]),
+			"enabled":  settingsvalue.ParseBool(itemMap["enabled"]),
 			"position": position,
 			"code":     code,
 		})
@@ -349,7 +350,7 @@ func normalizeNavConfig(value map[string]interface{}) jsonmap.JSON {
 	if builtinRaw, ok := value["builtin"].(map[string]interface{}); ok {
 		for _, key := range []string{"blog", "notice", "about"} {
 			if raw, exists := builtinRaw[key]; exists {
-				builtin[key] = parseSettingBool(raw)
+				builtin[key] = settingsvalue.ParseBool(raw)
 			}
 		}
 	}
@@ -417,7 +418,7 @@ func normalizeNavConfig(value map[string]interface{}) jsonmap.JSON {
 				"url":        url,
 				"target":     target,
 				"sort_order": sortOrder,
-				"enabled":    parseSettingBool(itemMap["enabled"]),
+				"enabled":    settingsvalue.ParseBool(itemMap["enabled"]),
 				"icon":       icon,
 			})
 
@@ -494,25 +495,26 @@ func isValidRegistrationEmailDomain(domain string) bool {
 
 // normalizeRegistrationSetting 归一化注册配置。
 func normalizeRegistrationSetting(value map[string]interface{}) jsonmap.JSON {
-	normalized := make(jsonmap.JSON, 4)
+	normalized := make(jsonmap.JSON, 5)
 	registrationEnabled := true
 	if raw, ok := value[constants.SettingFieldRegistrationEnabled]; ok {
-		registrationEnabled = parseSettingBool(raw)
+		registrationEnabled = settingsvalue.ParseBool(raw)
 	}
 	normalized[constants.SettingFieldRegistrationEnabled] = registrationEnabled
 
 	emailVerificationEnabled := true
 	if raw, ok := value[constants.SettingFieldEmailVerificationEnabled]; ok {
-		emailVerificationEnabled = parseSettingBool(raw)
+		emailVerificationEnabled = settingsvalue.ParseBool(raw)
 	}
 	normalized[constants.SettingFieldEmailVerificationEnabled] = emailVerificationEnabled
 
 	emailDomainAllowlistEnabled := false
 	if raw, ok := value[constants.SettingFieldEmailDomainAllowlistEnabled]; ok {
-		emailDomainAllowlistEnabled = parseSettingBool(raw)
+		emailDomainAllowlistEnabled = settingsvalue.ParseBool(raw)
 	}
 	normalized[constants.SettingFieldEmailDomainAllowlistEnabled] = emailDomainAllowlistEnabled
 	normalized[constants.SettingFieldAllowedEmailDomains] = normalizeRegistrationEmailDomains(value[constants.SettingFieldAllowedEmailDomains])
+	normalized[constants.SettingFieldRegistrationInviteOnly] = settingsvalue.ParseBool(value[constants.SettingFieldRegistrationInviteOnly])
 
 	return normalized
 }

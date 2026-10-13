@@ -1052,7 +1052,8 @@
         "codeRequired": "Please enter the code",
         "recoveryRequired": "Please enter a recovery code",
         "verifyFailed": "Verification failed, please check your input"
-      }
+      },
+      "inviteOnlyHint": "Registration is invite-only. New users (including third-party sign-in) need an invite code."
     },
     "telegramCallback": {
       "processing": "Processing Telegram login…",
@@ -1089,7 +1090,8 @@
         "registerFailed": "Registration failed, please check input",
         "agreementRequired": "Please read and agree to the Privacy Policy and Terms of Service first",
         "emailDomainNotAllowed": "This email domain cannot register. Please use: {domains}",
-        "emailDomainUnavailable": "No email domains are currently allowed. Please contact the administrator."
+        "emailDomainUnavailable": "No email domains are currently allowed. Please contact the administrator.",
+        "inviteCodeRequired": "Please enter an invite code"
       },
       "registrationDisabled": "Registration is currently disabled"
     },
@@ -1112,6 +1114,16 @@
         "sendCodeFailed": "Failed to send code",
         "resetFailed": "Reset failed, please check input"
       }
+    },
+    "invite": {
+      "dialogTitle": "Enter invite code",
+      "dialogMessage": "Registration on this site is invite-only. An invite code is required to create an account for this sign-in.",
+      "codeLabel": "Invite code",
+      "codePlaceholder": "Enter your invite code",
+      "submit": "Confirm and continue",
+      "submitting": "Verifying...",
+      "failed": "Invite code verification failed, please try again",
+      "registerHint": "Registration is invite-only. Enter the invite code you received."
     }
   },
   "order": {

@@ -161,7 +161,7 @@ func setupWholesaleOrderFixture(t *testing.T, name string, wholesalePrices produ
 		PromotionRepo:      promotiongormstore.New(db),
 		CouponStore:        coupongormstore.New(db),
 		CouponUsageStore:   coupongormstore.NewUsageStore(db),
-		MemberLevelService: memberlevelapp.NewService(levelRepo, priceRepo, userRepo),
+		MemberLevelService: memberlevelapp.NewService(levelRepo, priceRepo, memberlevelgormstore.NewUserStore(db)),
 		ExpireMinutes:      15,
 	})
 

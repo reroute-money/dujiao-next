@@ -61,7 +61,7 @@ func TestSyncSingleProductSKUMultipleRowsKeepsSingleActive(t *testing.T) {
 	}
 
 	targetPrice := decimal.RequireFromString("88.88")
-	if err := service.syncSingleProductSKU(repo, nil, productID, "", targetPrice, decimal.Zero, 5); err != nil {
+	if err := service.syncSingleProductSKU(repo, nil, productID, "", targetPrice, decimal.Zero, stockPtr(5)); err != nil {
 		t.Fatalf("sync single sku failed: %v", err)
 	}
 
@@ -117,7 +117,7 @@ func TestSyncSingleProductSKURenamesSurvivorToDefault(t *testing.T) {
 	}
 
 	targetPrice := decimal.RequireFromString("12.34")
-	if err := service.syncSingleProductSKU(repo, nil, productID, "", targetPrice, decimal.Zero, 7); err != nil {
+	if err := service.syncSingleProductSKU(repo, nil, productID, "", targetPrice, decimal.Zero, stockPtr(7)); err != nil {
 		t.Fatalf("sync single sku failed: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestSyncSingleProductSKURejectsRemovingSKUWithCardSecretStock(t *testing.T)
 	}
 
 	cardSecrets := &memoryCardSecretRepo{available: map[uint]int64{withStock.ID: 3}}
-	err := service.syncSingleProductSKU(repo, cardSecrets, productID, constants.FulfillmentTypeAuto, decimal.NewFromInt(10), decimal.Zero, 0)
+	err := service.syncSingleProductSKU(repo, cardSecrets, productID, constants.FulfillmentTypeAuto, decimal.NewFromInt(10), decimal.Zero, stockPtr(0))
 	if !errors.Is(err, productcontract.ErrProductSKUHasCardSecretStock) {
 		t.Fatalf("expected ErrProductSKUHasCardSecretStock, got %v", err)
 	}
@@ -227,7 +227,7 @@ func TestSyncSingleProductSKUNoActivePrefersDefaultCode(t *testing.T) {
 	}
 
 	targetPrice := decimal.RequireFromString("19.90")
-	if err := service.syncSingleProductSKU(repo, nil, productID, "", targetPrice, decimal.Zero, 6); err != nil {
+	if err := service.syncSingleProductSKU(repo, nil, productID, "", targetPrice, decimal.Zero, stockPtr(6)); err != nil {
 		t.Fatalf("sync single sku failed: %v", err)
 	}
 
@@ -362,3 +362,5 @@ func TestUpdateMappedProductPreservesUpstreamManualForm(t *testing.T) {
 		}
 	}
 }
+
+func stockPtr(value int) *int { return &value }

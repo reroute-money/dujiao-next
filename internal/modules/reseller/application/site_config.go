@@ -368,6 +368,8 @@ func (s *SiteConfigService) ApplyPublicConfigOverlay(ctx context.Context, tenant
 		"host":           tenant.Host,
 		"primary_domain": tenant.PrimaryDomain,
 	}
+	// 主站的统计/客服等自定义脚本不能在白标分销站上运行，否则主站能看到分销站顾客
+	out["scripts"] = []interface{}{}
 	brand, _ := out["brand"].(map[string]interface{})
 	if brand == nil {
 		brand = map[string]interface{}{}
