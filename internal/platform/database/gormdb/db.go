@@ -26,10 +26,18 @@ type DBPoolConfig struct {
 
 // InitDB 初始化数据库连接
 func InitDB(driver, dsn string, pool DBPoolConfig, mode string) error {
+	var err error
 	normalized := strings.ToLower(strings.TrimSpace(driver))
-	dialector, err := newDialector(driver, dsn)
-	if err != nil {
-		return err
+	var dialector gorm.Dialector
+	switch normalized {
+	case "", "sqlite":
+		// glebarez/sqlite 是基于 modernc.org/sqlite 的纯 Go 驱动
+		// 追加 PRAGMA 参数避免并发写入时 busy-spin 导致 CPU 飙升
+		dialector = sqlite.Open(appendSQLitePragmas(dsn))
+	case "postgres", "postgresql":
+		dialector = postgres.Open(dsn)
+	default:
+		return fmt.Errorf("unsupported database driver: %s", driver)
 	}
 	DB, err = gorm.Open(dialector, &gorm.Config{
 		Logger:  newGORMLogger(mode, nil),
@@ -52,20 +60,6 @@ func InitDB(driver, dsn string, pool DBPoolConfig, mode string) error {
 		DB.Exec("PRAGMA synchronous=NORMAL")
 	}
 	return nil
-}
-
-// newDialector 按 database.driver 构造 Dialector
-func newDialector(driver, dsn string) (gorm.Dialector, error) {
-	switch strings.ToLower(strings.TrimSpace(driver)) {
-	case "", "sqlite":
-		// glebarez/sqlite 是基于 modernc.org/sqlite 的纯 Go 驱动
-		// 追加 PRAGMA 参数避免并发写入时 busy-spin 导致 CPU 飙升
-		return sqlite.Open(appendSQLitePragmas(dsn)), nil
-	case "postgres", "postgresql":
-		return postgres.Open(dsn), nil
-	default:
-		return nil, fmt.Errorf("unsupported database driver: %s", driver)
-	}
 }
 
 func newGORMLogger(mode string, writer gormlogger.Writer) gormlogger.Interface {
